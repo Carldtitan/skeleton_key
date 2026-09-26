@@ -68,10 +68,10 @@ def human_done(job_id: str):
 
 
 @app.post("/api/jobs/{job_id}/generate", dependencies=[Depends(admin)])
-async def generate(job_id: str):  # async: create_task needs the running event loop
+async def generate(job_id: str, retry_failed: bool = False):  # async: create_task needs the running loop
     if not db.get_job(job_id):
         raise HTTPException(404)
-    jobs.start_generation(job_id)
+    jobs.start_generation(job_id, retry_failed)
     return {"ok": True}
 
 

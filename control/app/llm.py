@@ -36,7 +36,7 @@ def parse_json(text):
     m = re.search(r"\{.*\}", text, re.S)
     if not m:
         raise ValueError(f"no JSON in reply: {text[:200]}")
-    return json.loads(m.group(0))
+    return json.loads(m.group(0), strict=False)  # models often put raw newlines inside strings
 
 
 async def chat_json(model, messages, **kw):

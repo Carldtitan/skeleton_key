@@ -97,7 +97,8 @@ def shape(value, depth=0):
     if isinstance(value, list):
         return [shape(value[0], depth + 1), f"...{len(value)} items"] if value else []
     if isinstance(value, str):
-        return value[:60]
+        # Mark cut strings so the model never copies a truncated value as a real example.
+        return value if len(value) <= 80 else value[:60] + "…(truncated)"
     return value
 
 
@@ -204,20 +205,43 @@ def check(result, spec):
     if not result.get("ok"):
         return f"{result.get('error_code')}: {result.get('error', '')[:1500]}"
     out = result.get("output")
-    if not isinstance(out, dict):
+    if result.get("truncated"):  # large output: the runner reports its type and keys instead
+        if result.get("output_type") != "dict":
+            return f"run() must return a dict, got {result.get('output_type')}"
+        keys = result.get("output_keys") or []
+    elif not isinstance(out, dict):
         return f"run() must return a dict, got {type(out).__name__}"
-    missing = [f["name"] for f in spec.get("returns", []) if f["name"] not in out]
+    else:
+        keys = list(out)
+    missing = [f["name"] for f in spec.get("returns", []) if f["name"] not in keys]
     if missing:
-        return f"returned keys {sorted(out)[:20]} are missing declared fields {missing}"
-    if out and all(v in (None, "", [], {}) for v in out.values()) and result.get("http", {}).get("status") == 200:
-        body = result.get("http", {}).get("body", "")
-        if len(body) > 50:
-            return "all returned fields are empty although the API responded with data; the field mapping is wrong"
+        return f"returned keys {sorted(keys)[:20]} are missing declared fields {missing}"
+    if isinstance(out, dict) and out and all(v in (None, "", [], {}) for v in out.values()) \
+            and has_content(result.get("http", {}).get("body", "")):
+        return "all returned fields are empty although the API response contains data; the field mapping is wrong"
     return None
 
 
+def has_content(body):
+    """True if a JSON response holds a non-empty list somewhere near the top (i.e. real data to map)."""
+    try:
+        data = json.loads(body)
+    except ValueError:
+        return False
+    stack = [(data, 0)]
+    while stack:
+        v, depth = stack.pop()
+        if isinstance(v, list) and v:
+            return True
+        if isinstance(v, dict) and depth < 2:
+            stack.extend((x, depth + 1) for x in v.values())
+    return False
+
+
 def example_params(spec):
-    return {p["name"]: p["example"] for p in spec.get("params", []) if "example" in p and p["example"] is not None}
+    """Verify with required params only; optional ones (cursors, filters) use the operation's defaults."""
+    return {p["name"]: p["example"] for p in spec.get("params", [])
+            if p.get("required") and p.get("example") is not None}
 
 
 class Generator:
@@ -326,6 +350,18 @@ class Generator:
         except Exception as e:
             self.event("error", {"lesson": str(e)[:200]})
 
+    async def retry_failed(self):
+        """Re-run the verify/rewrite loop for read operations that failed, without regenerating the rest."""
+        self.lessons = await asyncio.to_thread(lessons.load)
+        failed = [o for o in db.operations(self.job_id)
+                  if o["status"] in ("failed", "verifying", "generated")  # also ones a restart left mid-flight
+                  and o["spec"] and o["spec"].get("side_effect") == "read"]
+        self.event("status", {"status": "generating", "detail": f"retrying {len(failed)} failed operations"})
+        await asyncio.gather(*(self.verify_loop(o) for o in failed))
+        counts = Counter(o["status"] for o in db.operations(self.job_id))
+        self.event("status", {"status": "generated", "detail": dict(counts)})
+        return counts
+
     async def run(self):
         self.lessons = await asyncio.to_thread(lessons.load)
         groups = collect(self.job_id, self.site)
@@ -352,7 +388,8 @@ class Generator:
             if name in done:
                 continue
             pair = by_name.get(o["spec"].get("undo") or "")
-            if not pair or pair["spec"]["name"] in done:
+            # "Undo = itself" (e.g. update_profile) is not a real undo: we can't know the prior value.
+            if not pair or pair["spec"]["name"] in done or pair["spec"]["name"] == name:
                 db.upsert_operation(self.job_id, o["endpoint"], status="unverified_no_undo")
                 continue
             done |= {name, pair["spec"]["name"]}

@@ -51,18 +51,20 @@ async def run_job(job_id):
         set_status(job_id, "failed", f"{type(e).__name__}: {e}")
 
 
-async def run_generation(job_id):
+async def run_generation(job_id, retry_failed=False):
     job = db.get_job(job_id)
-    set_status(job_id, "generating", "writing and verifying one operation per endpoint")
+    set_status(job_id, "generating", "retrying failed operations" if retry_failed
+               else "writing and verifying one operation per endpoint")
     try:
-        counts = await Generator(job_id, job["site_url"]).run()
+        gen = Generator(job_id, job["site_url"])
+        counts = await (gen.retry_failed() if retry_failed else gen.run())
         set_status(job_id, "generated", ", ".join(f"{v} {k}" for k, v in counts.items()))
     except Exception as e:
         set_status(job_id, "failed", f"generation: {type(e).__name__}: {e}")
 
 
-def start_generation(job_id):
-    tasks[job_id] = asyncio.create_task(run_generation(job_id))
+def start_generation(job_id, retry_failed=False):
+    tasks[job_id] = asyncio.create_task(run_generation(job_id, retry_failed))
 
 
 def start_job(site_url, hints):

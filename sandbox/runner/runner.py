@@ -24,8 +24,9 @@ def main():
             mod = importlib.import_module(call["op"])
             out = mod.run(inp["session"], **(call.get("params") or {}))
             text = json.dumps(out, default=str)
-            entry.update(ok=True, output=json.loads(text) if len(text) <= MAX_OUTPUT else text[:MAX_OUTPUT],
-                         truncated=len(text) > MAX_OUTPUT)
+            entry.update(ok=True, output_type=type(out).__name__, truncated=len(text) > MAX_OUTPUT,
+                         output_keys=sorted(out) if isinstance(out, dict) else None,
+                         output=json.loads(text) if len(text) <= MAX_OUTPUT else text[:MAX_OUTPUT])
         except runtime.OperationError as e:
             entry.update(ok=False, error_code=e.code, error=str(e))
         except Exception:
