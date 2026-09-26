@@ -14,7 +14,7 @@ async def lifespan(_app):
     db.init()
     # Jobs don't survive a restart (their asyncio tasks are gone); mark them so the UI is honest.
     for j in db.list_jobs():
-        if j["status"] in ("starting", "needs_human", "exploring"):
+        if j["status"] in ("starting", "needs_human", "exploring", "generating"):
             db.update_job(j["id"], status="interrupted", status_detail="control plane restarted")
     yield
 
@@ -65,6 +65,19 @@ def human_done(job_id: str):
         raise HTTPException(409, "job is not waiting for a human")
     ev.set()
     return {"ok": True}
+
+
+@app.post("/api/jobs/{job_id}/generate", dependencies=[Depends(admin)])
+async def generate(job_id: str):  # async: create_task needs the running event loop
+    if not db.get_job(job_id):
+        raise HTTPException(404)
+    jobs.start_generation(job_id)
+    return {"ok": True}
+
+
+@app.get("/api/jobs/{job_id}/operations", dependencies=[Depends(admin)])
+def list_operations(job_id: str):
+    return db.operations(job_id)
 
 
 @app.post("/api/jobs/{job_id}/stop", dependencies=[Depends(admin)])

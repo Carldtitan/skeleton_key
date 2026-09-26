@@ -52,6 +52,18 @@ CREATE TABLE IF NOT EXISTS requests (
     resp_headers TEXT,
     resp_body TEXT
 );
+CREATE TABLE IF NOT EXISTS operations (
+    job_id TEXT NOT NULL,
+    endpoint TEXT NOT NULL,
+    name TEXT,
+    status TEXT,
+    spec TEXT,
+    code TEXT,
+    attempts INTEGER DEFAULT 0,
+    last_result TEXT,
+    history TEXT,
+    PRIMARY KEY (job_id, endpoint)
+);
 CREATE TABLE IF NOT EXISTS sessions (
     job_id TEXT PRIMARY KEY,
     cookies TEXT,
@@ -141,6 +153,35 @@ def requests_for(job_id, step=None):
 def request_count(job_id):
     with conn() as c:
         return c.execute("SELECT COUNT(*) FROM requests WHERE job_id=?", (job_id,)).fetchone()[0]
+
+
+def upsert_operation(job_id, endpoint, **fields):
+    for k in ("spec", "last_result", "history"):
+        if k in fields and not isinstance(fields[k], str):
+            fields[k] = json.dumps(fields[k], default=str)
+    with conn() as c:
+        c.execute("INSERT OR IGNORE INTO operations (job_id, endpoint) VALUES (?, ?)", (job_id, endpoint))
+        if fields:
+            cols = ", ".join(f"{k}=?" for k in fields)
+            c.execute(f"UPDATE operations SET {cols} WHERE job_id=? AND endpoint=?", (*fields.values(), job_id, endpoint))
+
+
+def operations(job_id):
+    with conn() as c:
+        rows = c.execute("SELECT * FROM operations WHERE job_id=? ORDER BY name", (job_id,)).fetchall()
+    out = []
+    for r in rows:
+        d = dict(r)
+        for k in ("spec", "last_result", "history"):
+            d[k] = json.loads(d[k]) if d[k] else None
+        out.append(d)
+    return out
+
+
+def get_session(job_id):
+    with conn() as c:
+        row = c.execute("SELECT cookies FROM sessions WHERE job_id=?", (job_id,)).fetchone()
+    return json.loads(row["cookies"]) if row else None
 
 
 def save_session(job_id, cookies):

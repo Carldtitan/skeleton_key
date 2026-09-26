@@ -5,6 +5,7 @@ import secrets
 from . import db, workers
 from .config import EXPLORE_MAX_STEPS
 from .explorer import explore
+from .generator import Generator
 from .handoff import wait_for_login
 
 # In-memory signals for jobs running in this process.
@@ -45,8 +46,23 @@ async def run_job(job_id):
         history = await explore(job_id, sb["cdp"], job["site_url"], job["hints"], EXPLORE_MAX_STEPS,
                                 lambda reason: need_human(job_id, reason))
         set_status(job_id, "explored", f"{len(history)} steps, {db.request_count(job_id)} requests captured")
+        await run_generation(job_id)
     except Exception as e:
         set_status(job_id, "failed", f"{type(e).__name__}: {e}")
+
+
+async def run_generation(job_id):
+    job = db.get_job(job_id)
+    set_status(job_id, "generating", "writing and verifying one operation per endpoint")
+    try:
+        counts = await Generator(job_id, job["site_url"]).run()
+        set_status(job_id, "generated", ", ".join(f"{v} {k}" for k, v in counts.items()))
+    except Exception as e:
+        set_status(job_id, "failed", f"generation: {type(e).__name__}: {e}")
+
+
+def start_generation(job_id):
+    tasks[job_id] = asyncio.create_task(run_generation(job_id))
 
 
 def start_job(site_url, hints):

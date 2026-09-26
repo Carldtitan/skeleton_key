@@ -3,8 +3,11 @@
 Listens on the worker's VPC address only and requires a shared bearer token, so the
 control plane never gets raw Docker access to the worker.
 """
+import io
+import json
 import os
 import secrets
+import tarfile
 
 import docker
 from fastapi import Depends, FastAPI, Header, HTTPException
@@ -13,6 +16,7 @@ from pydantic import BaseModel
 TOKEN = os.environ["SK_WORKER_TOKEN"]
 BIND_IP = os.environ["SK_BIND_IP"]  # this worker's VPC address
 IMAGE = os.environ.get("SK_BROWSER_IMAGE", "sk-browser:latest")
+RUNNER_IMAGE = os.environ.get("SK_RUNNER_IMAGE", "sk-runner:latest")
 MEM_LIMIT = os.environ.get("SK_SANDBOX_MEM", "2g")
 CPU_LIMIT = float(os.environ.get("SK_SANDBOX_CPUS", "1.5"))
 MIN_FREE_MB = int(os.environ.get("SK_MIN_FREE_MB", "1200"))
@@ -91,6 +95,46 @@ def create_sandbox(req: SandboxRequest):
         pids_limit=512,
     )
     return describe(c)
+
+
+class RunRequest(BaseModel):
+    files: dict[str, str]  # module file name -> source (generated operation code)
+    input: dict            # {"session": ..., "calls": [...]}
+    timeout: int = 90
+
+
+@app.post("/run", dependencies=[Depends(auth)])
+def run_code(req: RunRequest):
+    """Execute untrusted generated code in a throwaway, capped container and return its JSON output."""
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w") as tar:
+        for name, content in {**req.files, "input.json": json.dumps(req.input)}.items():
+            data = content.encode()
+            info = tarfile.TarInfo(os.path.basename(name))
+            info.size, info.uid, info.mode = len(data), 1000, 0o644
+            tar.addfile(info, io.BytesIO(data))
+    c = client.containers.create(
+        RUNNER_IMAGE,
+        labels={"sk.role": "runner"},
+        mem_limit="512m", nano_cpus=int(1e9), pids_limit=128,
+        cap_drop=["ALL"], security_opt=["no-new-privileges"],
+    )
+    try:
+        c.put_archive("/work", buf.getvalue())
+        c.start()
+        try:
+            status = c.wait(timeout=req.timeout)
+        except Exception:
+            c.kill()
+            return {"ok": False, "error": f"timed out after {req.timeout}s", "results": []}
+        out = c.logs(stdout=True, stderr=False).decode(errors="replace").strip()
+        err = c.logs(stdout=False, stderr=True).decode(errors="replace")[-2000:]
+        try:
+            return {"ok": status.get("StatusCode") == 0, "results": json.loads(out.splitlines()[-1]), "stderr": err}
+        except (ValueError, IndexError):
+            return {"ok": False, "error": "runner produced no JSON", "stdout": out[-2000:], "stderr": err, "results": []}
+    finally:
+        c.remove(force=True)
 
 
 @app.delete("/sandboxes/{name}", dependencies=[Depends(auth)])
