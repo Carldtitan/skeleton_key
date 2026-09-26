@@ -282,7 +282,7 @@ async def publish(job_id, base_url):
 
     # The gateway runs the un-redacted code (it may need exact constants); docs are what's published.
     private = {o["name"]: o for o in ops}
-    manifest_ops = [{**o, "code": private[o["name"]]["code"]} for o in public_ops]
+    manifest_ops = [{**o, "code": private[o["name"]]["code"], "public_code": o["code"]} for o in public_ops]
     db.save_site(domain, job_id, title, {"operations": manifest_ops, "site_module": site_module,
                                          "login_url": job["site_url"], "openapi": spec})
     summary = {"domain": domain, "operations": len(public_ops), "renamed": renamed_ops, "dropped": sorted(drop),

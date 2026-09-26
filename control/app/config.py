@@ -18,3 +18,18 @@ EXPLORE_MAX_STEPS = int(os.environ.get("SK_EXPLORE_MAX_STEPS", "60"))
 
 # Public base URL (Caddy terminates TLS for this domain).
 PUBLIC_URL = os.environ.get("SK_PUBLIC_URL") or f"https://{os.environ.get('SK_DOMAIN', 'localhost')}"
+
+# Optional frontier baseline for the race (comparison only; the product itself uses Vultr inference).
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY") or None
+FRONTIER_MODEL = os.environ.get("SK_FRONTIER_MODEL", "claude-opus-5")
+TOOL_AGENT_MODEL = os.environ.get("SK_TOOL_AGENT_MODEL", BROWSE_MODEL)
+JUDGE_MODEL = os.environ.get("SK_JUDGE_MODEL", "glm-5.3-flash")
+
+# USD per token for the frontier baseline (Anthropic list prices).
+ANTHROPIC_PRICES = {
+    "claude-opus-5": (5 / 1e6, 25 / 1e6),
+    "claude-opus-5-5": (4 / 1e6, 20 / 1e6),
+    "claude-sonnet-5": (2 / 1e6, 10 / 1e6),
+    "claude-haiku-4-5": (1 / 1e6, 5 / 1e6),
+}
+HEALTH_CHECK_SECONDS = int(os.environ.get("SK_HEALTH_CHECK_SECONDS", "900"))

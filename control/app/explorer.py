@@ -66,7 +66,30 @@ def resolve_element(page, element, elements):
         raise ValueError(f"unknown element {element!r}")
 
 
+SCROLL_JS = """(dy) => {
+  // Scroll the window if it can move, else the largest scrollable container (many apps scroll a div).
+  const before = scrollY;
+  scrollBy(0, dy);
+  if (scrollY !== before) return 'page';
+  const els = [...document.querySelectorAll('*')].filter(e => {
+    const s = getComputedStyle(e);
+    return /(auto|scroll)/.test(s.overflowY) && e.scrollHeight > e.clientHeight + 20;
+  }).sort((a, b) => b.clientHeight * b.clientWidth - a.clientHeight * a.clientWidth);
+  for (const e of els) { const t = e.scrollTop; e.scrollBy(0, dy); if (e.scrollTop !== t) return 'container'; }
+  return 'none';
+}"""
+
+
+async def scroll(page, dy):
+    """Scroll and report whether anything moved, so the agent is never told 'ok' for a no-op."""
+    vp = page.viewport_size or {"width": 1280, "height": 800}
+    await page.mouse.move(vp["width"] / 2, vp["height"] / 2)  # wheel events go where the mouse is
+    moved = await page.evaluate(SCROLL_JS, dy)
+    return "scrolled" if moved != "none" else "page did not move (already at the end)"
+
+
 async def perform(b: SandboxBrowser, act, elements):
+    """Carry out one action. Returns a short note for the agent's history, if any."""
     page = b.page
     a = act.get("action")
     if a in ("click", "type", "select"):
@@ -80,7 +103,7 @@ async def perform(b: SandboxBrowser, act, elements):
         else:
             await loc.select_option(label=str(act.get("text", "")), timeout=8_000)
     elif a == "scroll":
-        await page.mouse.wheel(0, 700 if act.get("direction", "down") == "down" else -700)
+        return await scroll(page, 700 if act.get("direction", "down") == "down" else -700)
     elif a == "navigate":
         await page.goto(act["url"], wait_until="domcontentloaded", timeout=30_000)
     elif a == "back":
@@ -137,9 +160,9 @@ async def explore(job_id, cdp, site, hints, max_steps, on_need_human, patience=1
 
             url_before = b.page.url
             try:
-                await perform(b, act, obs["elements"])
+                note = await perform(b, act, obs["elements"])
                 await b.settle()
-                result = "ok"
+                result = note or "ok"
             except Exception as e:
                 result = f"failed: {str(e).splitlines()[0][:120]}"
 

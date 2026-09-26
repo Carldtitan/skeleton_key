@@ -72,6 +72,67 @@ async def chat(model, messages, max_tokens=4000, temperature=0.2, retries=3):
     raise RuntimeError(f"inference failed: {last}")
 
 
+def _to_anthropic(messages):
+    """Convert our OpenAI-style messages (system + user with image_url data URLs) to Messages API shape."""
+    system, out = "", []
+    for m in messages:
+        if m["role"] == "system":
+            system += m["content"]
+            continue
+        content = m["content"]
+        if isinstance(content, str):
+            out.append({"role": m["role"], "content": content})
+            continue
+        blocks = []
+        for part in content:
+            if part["type"] == "text":
+                blocks.append({"type": "text", "text": part["text"]})
+            elif part["type"] == "image_url":
+                header, data = part["image_url"]["url"].split(",", 1)
+                blocks.append({"type": "image", "source": {"type": "base64", "data": data,
+                                                           "media_type": header.split(":")[1].split(";")[0]}})
+        out.append({"role": m["role"], "content": blocks})
+    return system, out
+
+
+async def chat_anthropic(model, messages, max_tokens=16000):
+    """Frontier baseline for the race only. Returns (text, usage in OpenAI field names)."""
+    import anthropic
+
+    from .config import ANTHROPIC_API_KEY, ANTHROPIC_PRICES
+    system, msgs = _to_anthropic(messages)
+    started = time.monotonic()
+    async with anthropic.AsyncAnthropic(api_key=ANTHROPIC_API_KEY) as client:
+        response = await client.beta.messages.create(
+            model=model, max_tokens=max_tokens, system=system, messages=msgs,
+            thinking={"type": "adaptive"},
+            betas=["server-side-fallback-2026-07-01"], fallbacks="default",
+        )
+    if response.stop_reason == "refusal":
+        raise RuntimeError("frontier model declined the request")
+    text = "".join(b.text for b in response.content if b.type == "text")
+    usage = {"prompt_tokens": response.usage.input_tokens, "completion_tokens": response.usage.output_tokens}
+    tag = meter.get()
+    if tag:
+        p_in, p_out = ANTHROPIC_PRICES.get(model, (0.0, 0.0))
+        db.add_usage(tag[0], tag[1], model, usage["prompt_tokens"], usage["completion_tokens"],
+                     usage["prompt_tokens"] * p_in + usage["completion_tokens"] * p_out, time.monotonic() - started)
+    return text, usage
+
+
+async def chat_tools(model, messages, tools, max_tokens=4000):
+    """One tool-calling turn on Vultr inference. Returns the assistant message dict (may contain tool_calls)."""
+    body = {"model": model, "messages": messages, "tools": tools, "max_tokens": max_tokens, "temperature": 0.2}
+    started = time.monotonic()
+    async with httpx.AsyncClient(timeout=180) as client:
+        r = await client.post(f"{INFERENCE_URL}/chat/completions", json=body,
+                              headers={"Authorization": f"Bearer {INFERENCE_KEY}"})
+    r.raise_for_status()
+    data = r.json()
+    await _record(model, data.get("usage", {}), time.monotonic() - started)
+    return data["choices"][0]["message"]
+
+
 def parse_json(text):
     """Extract the first JSON object from a model reply (tolerates code fences and prose)."""
     m = re.search(r"\{.*\}", text, re.S)

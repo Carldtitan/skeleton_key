@@ -34,8 +34,14 @@ async def live_ws(ws: WebSocket, job_id: str, token: str):
     offered = ws.scope.get("subprotocols") or []
     proto = "binary" if "binary" in offered else None
     await ws.accept(subprotocol=proto)
-    async with websockets.connect(f"ws://{vnc}/websockify", subprotocols=[proto] if proto else None,
-                                  max_size=None) as upstream:
+    try:
+        upstream_cm = websockets.connect(f"ws://{vnc}/websockify", subprotocols=[proto] if proto else None,
+                                         max_size=None)
+        upstream = await upstream_cm.__aenter__()
+    except OSError:
+        await ws.close(code=4410)  # sandbox already gone
+        return
+    try:
         async def client_to_upstream():
             while True:
                 msg = await ws.receive()
@@ -56,12 +62,17 @@ async def live_ws(ws: WebSocket, job_id: str, token: str):
         )
         for t in pending:
             t.cancel()
+    finally:
+        await upstream_cm.__aexit__(None, None, None)
 
 
 @router.get("/live/{job_id}/{token}/{path:path}")
 async def live_http(job_id: str, token: str, path: str):
     vnc = sandbox_vnc(job_id, token)
-    async with httpx.AsyncClient(timeout=15) as client:
-        r = await client.get(f"http://{vnc}/{path}")
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            r = await client.get(f"http://{vnc}/{path}")
+    except httpx.HTTPError:
+        return Response("browser ended", status_code=410, media_type="text/plain")  # sandbox already gone
     return Response(r.content, status_code=r.status_code,
                     media_type=r.headers.get("content-type", "application/octet-stream"))

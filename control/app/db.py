@@ -109,6 +109,11 @@ def conn():
 MIGRATIONS = [
     "ALTER TABLE jobs ADD COLUMN kind TEXT DEFAULT 'generate'",
     "ALTER TABLE jobs ADD COLUMN connection_id TEXT",
+    # Single-operator demo: keep the key so the site page can show the copy line.
+    "ALTER TABLE connections ADD COLUMN api_key TEXT",
+    "ALTER TABLE connections ADD COLUMN checked REAL",
+    """CREATE TABLE IF NOT EXISTS reconnect_tokens (
+        token TEXT PRIMARY KEY, connection_id TEXT, domain TEXT, job_id TEXT, expires REAL, used INTEGER DEFAULT 0)""",
 ]
 
 
@@ -283,6 +288,30 @@ def list_connections():
     with conn() as c:
         return [{k: v for k, v in dict(r).items() if k not in ("cookies", "api_key_hash")}
                 for r in c.execute("SELECT * FROM connections ORDER BY created")]
+
+
+def connection_for_domain(domain):
+    with conn() as c:
+        r = c.execute("SELECT * FROM connections WHERE domain=? ORDER BY updated DESC LIMIT 1", (domain,)).fetchone()
+    return dict(r) | {"cookies": json.loads(r["cookies"] or "[]")} if r else None
+
+
+def create_reconnect_token(token, connection_id, domain, ttl=1800):
+    with conn() as c:
+        c.execute("INSERT INTO reconnect_tokens (token, connection_id, domain, expires) VALUES (?,?,?,?)",
+                  (token, connection_id, domain, time.time() + ttl))
+
+
+def get_reconnect_token(token):
+    with conn() as c:
+        r = c.execute("SELECT * FROM reconnect_tokens WHERE token=?", (token,)).fetchone()
+    return dict(r) if r else None
+
+
+def update_reconnect_token(token, **fields):
+    cols = ", ".join(f"{k}=?" for k in fields)
+    with conn() as c:
+        c.execute(f"UPDATE reconnect_tokens SET {cols} WHERE token=?", (*fields.values(), token))
 
 
 def get_session(job_id):

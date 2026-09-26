@@ -28,6 +28,7 @@ def new_connection(domain, cookies, job_id):
     conn_id = "conn_" + secrets.token_hex(6)
     key = "sk_" + secrets.token_urlsafe(24)
     db.save_connection(conn_id, domain, hash_key(key), cookies, job_id)
+    db.update_connection(conn_id, api_key=key)
     return conn_id, key
 
 
@@ -59,7 +60,10 @@ def validate_params(op, params):
 
 
 def reconnect_url(conn, base_url):
-    return f"{base_url}/connect/{conn['domain']}?connection={conn['id']}"
+    """A one-time link that opens only this connection's login page (no site password needed)."""
+    token = secrets.token_urlsafe(18)
+    db.create_reconnect_token(token, conn["id"], conn["domain"])
+    return f"{base_url}/#/r/{token}"
 
 
 async def execute(conn, op_name, params, base_url=""):
@@ -87,3 +91,38 @@ async def execute(conn, op_name, params, base_url=""):
                            reconnect_url=reconnect_url(conn, base_url))
     status = {"not_found": 404, "rate_limited": 429, "bad_request": 400, "blocked": 403}.get(code, 502)
     raise GatewayError(code, (result.get("error") or res.get("error") or "operation failed")[:500], status)
+
+
+def probe_operation(domain):
+    """The cheapest read to test a session: get_current_user, else any read with no required params."""
+    site = db.get_site(domain)
+    if not site:
+        return None
+    reads = [o for o in site["spec"]["operations"]
+             if o["spec"].get("side_effect") == "read" and o["status"] == "verified"
+             and not any(p.get("required") for p in o["spec"].get("params", []))]
+    return next((o["name"] for o in reads if o["name"] == "get_current_user"), reads[0]["name"] if reads else None)
+
+
+async def check_connection(conn, base_url=""):
+    op = probe_operation(conn["domain"])
+    if not op or conn["status"] != "active":
+        return conn["status"]
+    try:
+        await execute(conn, op, {}, base_url)
+        status = "active"
+    except GatewayError as e:
+        status = "expired" if e.code == "session_expired" else "active"
+    db.update_connection(conn["id"], status=status, checked=time.time())
+    return status
+
+
+async def health_loop(interval, base_url=""):
+    import asyncio
+    while True:
+        await asyncio.sleep(interval)
+        for c in db.list_connections():
+            try:
+                await check_connection(db.get_connection(c["id"]), base_url)
+            except Exception:
+                pass

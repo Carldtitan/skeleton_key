@@ -6,3 +6,4 @@ infra/state.json
 __pycache__/
 *.pyc
 .mcp.json
+W&B hack/
