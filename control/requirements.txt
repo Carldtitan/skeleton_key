@@ -1,0 +1,6 @@
+fastapi==0.141.1
+uvicorn[standard]==0.54.0
+httpx==0.28.1
+websockets==17.1
+playwright==1.63.0
+boto3
