@@ -29,7 +29,7 @@ SSH_PUBKEY = pathlib.Path.home() / ".ssh" / "skeleton_key.pub"
 OBJSTORE_CLUSTER_ATL2, OBJSTORE_TIER_STANDARD = 22, 2
 # Container Registry has no Atlanta region; New Jersey is closest. Free plan.
 REGISTRY_NAME, REGISTRY_REGION, REGISTRY_PLAN = "skeletonkey", "ewr", "start_up"
-BROWSER_IMAGE = "sk-browser"
+BROWSER_IMAGE, RUNNER_IMAGE = "sk-browser", "sk-runner"
 
 INSTANCES = {
     "sk-control": {"plan": "vc2-2c-4gb", "firewall": "sk-control-fw", "role": "control"},
@@ -92,9 +92,13 @@ def bootstrap_script(role, pull_creds=None):
     if role == "worker" and pull_creds:
         host, user, password = pull_creds
         # Read-only credentials: a compromised worker cannot overwrite images.
-        pull = (f"echo '{password}' | docker login {host} -u '{user}' --password-stdin\n"
-                f"docker pull {host}/{REGISTRY_NAME}/{BROWSER_IMAGE}:latest\n"
-                f"docker tag {host}/{REGISTRY_NAME}/{BROWSER_IMAGE}:latest {BROWSER_IMAGE}:latest\n")
+        pull = f"echo '{password}' | docker login {host} -u '{user}' --password-stdin\n"
+        for image in (BROWSER_IMAGE, RUNNER_IMAGE):
+            pull += (f"docker pull {host}/{REGISTRY_NAME}/{image}:latest\n"
+                     f"docker tag {host}/{REGISTRY_NAME}/{image}:latest {image}:latest\n")
+        # Same rules as worker/harden.sh: containers can't reach the VPC or the metadata service.
+        pull += ("iptables -I DOCKER-USER -d 10.10.0.0/24 -m conntrack --ctstate NEW -j DROP\n"
+                 "iptables -I DOCKER-USER -d 169.254.169.254/32 -j DROP\n")
     return f"""#!/bin/bash
 set -eux
 export DEBIAN_FRONTEND=noninteractive
