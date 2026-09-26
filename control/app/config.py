@@ -15,3 +15,6 @@ BROWSE_MODEL = os.environ.get("SK_BROWSE_MODEL", "qwen3.8-27b")
 CODE_MODEL = os.environ.get("SK_CODE_MODEL", "glm-5.3")
 
 EXPLORE_MAX_STEPS = int(os.environ.get("SK_EXPLORE_MAX_STEPS", "60"))
+
+# Public base URL (Caddy terminates TLS for this domain).
+PUBLIC_URL = os.environ.get("SK_PUBLIC_URL") or f"https://{os.environ.get('SK_DOMAIN', 'localhost')}"

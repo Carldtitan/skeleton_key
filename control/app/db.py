@@ -64,6 +64,34 @@ CREATE TABLE IF NOT EXISTS operations (
     history TEXT,
     PRIMARY KEY (job_id, endpoint)
 );
+CREATE TABLE IF NOT EXISTS usage (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id TEXT NOT NULL,
+    phase TEXT,
+    model TEXT,
+    prompt_tokens INTEGER,
+    completion_tokens INTEGER,
+    cost_usd REAL,
+    seconds REAL,
+    ts REAL
+);
+CREATE TABLE IF NOT EXISTS sites (
+    domain TEXT PRIMARY KEY,
+    job_id TEXT,
+    title TEXT,
+    spec TEXT,
+    published REAL
+);
+CREATE TABLE IF NOT EXISTS connections (
+    id TEXT PRIMARY KEY,
+    domain TEXT NOT NULL,
+    api_key_hash TEXT NOT NULL,
+    cookies TEXT,
+    status TEXT,
+    job_id TEXT,
+    created REAL,
+    updated REAL
+);
 CREATE TABLE IF NOT EXISTS sessions (
     job_id TEXT PRIMARY KEY,
     cookies TEXT,
@@ -78,17 +106,29 @@ def conn():
     return c
 
 
+MIGRATIONS = [
+    "ALTER TABLE jobs ADD COLUMN kind TEXT DEFAULT 'generate'",
+    "ALTER TABLE jobs ADD COLUMN connection_id TEXT",
+]
+
+
 def init():
     with conn() as c:
         c.executescript(SCHEMA)
+        for m in MIGRATIONS:
+            try:
+                c.execute(m)
+            except sqlite3.OperationalError:
+                pass  # already applied
 
 
-def create_job(job_id, site_url, hints, view_token):
+def create_job(job_id, site_url, hints, view_token, kind="generate", connection_id=None):
     now = time.time()
     with conn() as c:
         c.execute(
-            "INSERT INTO jobs (id, site_url, hints, status, view_token, created, updated) VALUES (?,?,?,?,?,?,?)",
-            (job_id, site_url, hints, "starting", view_token, now, now),
+            "INSERT INTO jobs (id, site_url, hints, status, view_token, created, updated, kind, connection_id) "
+            "VALUES (?,?,?,?,?,?,?,?,?)",
+            (job_id, site_url, hints, "starting", view_token, now, now, kind, connection_id),
         )
 
 
@@ -176,6 +216,73 @@ def operations(job_id):
             d[k] = json.loads(d[k]) if d[k] else None
         out.append(d)
     return out
+
+
+def add_usage(job_id, phase, model, prompt_tokens, completion_tokens, cost_usd, seconds):
+    with conn() as c:
+        c.execute("INSERT INTO usage (job_id, phase, model, prompt_tokens, completion_tokens, cost_usd, seconds, ts) "
+                  "VALUES (?,?,?,?,?,?,?,?)",
+                  (job_id, phase, model, prompt_tokens, completion_tokens, cost_usd, seconds, time.time()))
+
+
+def usage_summary(job_id):
+    with conn() as c:
+        rows = c.execute("SELECT phase, COUNT(*) calls, SUM(prompt_tokens) prompt_tokens, "
+                         "SUM(completion_tokens) completion_tokens, SUM(cost_usd) cost_usd, SUM(seconds) seconds "
+                         "FROM usage WHERE job_id=? GROUP BY phase", (job_id,)).fetchall()
+    return {r["phase"]: dict(r) for r in rows}
+
+
+def save_site(domain, job_id, title, spec):
+    with conn() as c:
+        c.execute("INSERT OR REPLACE INTO sites (domain, job_id, title, spec, published) VALUES (?,?,?,?,?)",
+                  (domain, job_id, title, json.dumps(spec), time.time()))
+
+
+def get_site(domain):
+    with conn() as c:
+        r = c.execute("SELECT * FROM sites WHERE domain=?", (domain,)).fetchone()
+    return dict(r) | {"spec": json.loads(r["spec"])} if r else None
+
+
+def list_sites():
+    with conn() as c:
+        return [dict(r) | {"spec": json.loads(r["spec"])} for r in c.execute("SELECT * FROM sites ORDER BY domain")]
+
+
+def save_connection(conn_id, domain, api_key_hash, cookies, job_id, status="active"):
+    now = time.time()
+    with conn() as c:
+        c.execute("INSERT OR REPLACE INTO connections (id, domain, api_key_hash, cookies, status, job_id, created, updated) "
+                  "VALUES (?,?,?,?,?,?,COALESCE((SELECT created FROM connections WHERE id=?), ?),?)",
+                  (conn_id, domain, api_key_hash, json.dumps(cookies), status, job_id, conn_id, now, now))
+
+
+def update_connection(conn_id, **fields):
+    if "cookies" in fields:
+        fields["cookies"] = json.dumps(fields["cookies"])
+    fields["updated"] = time.time()
+    cols = ", ".join(f"{k}=?" for k in fields)
+    with conn() as c:
+        c.execute(f"UPDATE connections SET {cols} WHERE id=?", (*fields.values(), conn_id))
+
+
+def connection_by_key_hash(api_key_hash):
+    with conn() as c:
+        r = c.execute("SELECT * FROM connections WHERE api_key_hash=?", (api_key_hash,)).fetchone()
+    return dict(r) | {"cookies": json.loads(r["cookies"] or "[]")} if r else None
+
+
+def get_connection(conn_id):
+    with conn() as c:
+        r = c.execute("SELECT * FROM connections WHERE id=?", (conn_id,)).fetchone()
+    return dict(r) | {"cookies": json.loads(r["cookies"] or "[]")} if r else None
+
+
+def list_connections():
+    with conn() as c:
+        return [{k: v for k, v in dict(r).items() if k not in ("cookies", "api_key_hash")}
+                for r in c.execute("SELECT * FROM connections ORDER BY created")]
 
 
 def get_session(job_id):

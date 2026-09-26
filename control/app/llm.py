@@ -1,11 +1,50 @@
-"""Vultr Serverless Inference client (OpenAI-compatible). Every agent LLM call goes through here."""
+"""Vultr Serverless Inference client (OpenAI-compatible). Every agent LLM call goes through here.
+
+Usage is metered per (job, phase) via a context variable, priced from Vultr's live model list.
+"""
 import asyncio
 import json
 import re
+import time
+from contextvars import ContextVar
 
 import httpx
 
+from . import db
 from .config import INFERENCE_KEY, INFERENCE_URL
+
+# (job_id, phase) for the code currently running; set by jobs/race so every call gets attributed.
+meter: ContextVar = ContextVar("llm_meter", default=None)
+_prices: dict = {}
+
+
+async def prices():
+    """USD per token for each model, from the public model list (cached)."""
+    if not _prices:
+        try:
+            async with httpx.AsyncClient(timeout=20) as client:
+                models = (await client.get(f"{INFERENCE_URL}/models")).json()["data"]
+            for m in models:
+                p = {x["type"]: float(x["cost_usd"]) for io in m.get("input_modalities", []) + m.get("output_modalities", [])
+                     for x in io.get("pricing", [])}
+                _prices[m["id"]] = (p.get("prompt", 0.0), p.get("completion", 0.0))
+        except Exception:
+            pass
+    return _prices
+
+
+async def cost_of(model, usage):
+    p_in, p_out = (await prices()).get(model, (0.0, 0.0))
+    return usage.get("prompt_tokens", 0) * p_in + usage.get("completion_tokens", 0) * p_out
+
+
+async def _record(model, usage, seconds):
+    tag = meter.get()
+    if not tag:
+        return
+    job_id, phase = tag
+    db.add_usage(job_id, phase, model, usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0),
+                 await cost_of(model, usage), seconds)
 
 
 async def chat(model, messages, max_tokens=4000, temperature=0.2, retries=3):
@@ -13,6 +52,7 @@ async def chat(model, messages, max_tokens=4000, temperature=0.2, retries=3):
     last = None
     for attempt in range(retries):
         try:
+            started = time.monotonic()
             async with httpx.AsyncClient(timeout=180) as client:
                 r = await client.post(f"{INFERENCE_URL}/chat/completions", json=body,
                                       headers={"Authorization": f"Bearer {INFERENCE_KEY}"})
@@ -20,6 +60,7 @@ async def chat(model, messages, max_tokens=4000, temperature=0.2, retries=3):
                 raise httpx.HTTPStatusError(r.text[:200], request=r.request, response=r)
             r.raise_for_status()
             data = r.json()
+            await _record(model, data.get("usage", {}), time.monotonic() - started)
             content = data["choices"][0]["message"].get("content") or ""
             if content.strip():
                 return content, data.get("usage", {})

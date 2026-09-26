@@ -2,19 +2,20 @@ import os
 import secrets
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from pydantic import BaseModel
 
-from . import db, jobs, liveview
+from . import db, gateway, jobs, liveview, mcp_server, race
+from .config import PUBLIC_URL
 
 @asynccontextmanager
 async def lifespan(_app):
     db.init()
     # Jobs don't survive a restart (their asyncio tasks are gone); mark them so the UI is honest.
     for j in db.list_jobs():
-        if j["status"] in ("starting", "needs_human", "exploring", "generating"):
+        if j["status"] in ("starting", "needs_human", "exploring", "generating", "publishing", "racing"):
             db.update_job(j["id"], status="interrupted", status_detail="control plane restarted")
     yield
 
@@ -30,6 +31,7 @@ def admin(creds: HTTPBasicCredentials = Depends(security)):
 
 
 app.include_router(liveview.router)
+app.include_router(mcp_server.router)
 
 
 class NewJob(BaseModel):
@@ -86,6 +88,100 @@ async def stop(job_id: str):
     return {"ok": True}
 
 
+@app.post("/api/jobs/{job_id}/publish", dependencies=[Depends(admin)])
+async def publish(job_id: str, create_connection: bool = False):
+    if not db.get_job(job_id):
+        raise HTTPException(404)
+    jobs.start_publish(job_id, create_connection)
+    return {"ok": True}
+
+
+@app.get("/api/jobs/{job_id}/usage", dependencies=[Depends(admin)])
+def job_usage(job_id: str):
+    return db.usage_summary(job_id)
+
+
+# --- Catalog, connections, race (operator API) -------------------------------------------------
+
+@app.get("/api/sites", dependencies=[Depends(admin)])
+def sites():
+    return [{"domain": s["domain"], "title": s["title"], "job_id": s["job_id"], "published": s["published"],
+             "operations": [{"name": o["name"], "status": o["status"], "side_effect": o["spec"].get("side_effect"),
+                             "summary": o["spec"].get("summary")} for o in s["spec"]["operations"]],
+             "generation_cost_usd": race.generation_cost(s["domain"])} for s in db.list_sites()]
+
+
+@app.get("/api/connections", dependencies=[Depends(admin)])
+def connections():
+    return db.list_connections()
+
+
+@app.post("/api/connect/{domain}", dependencies=[Depends(admin)])
+async def connect(domain: str, connection: str | None = None):
+    try:
+        return {"job_id": jobs.start_connect(domain, connection)}
+    except ValueError as e:
+        raise HTTPException(404, str(e))
+
+
+class RaceRequest(BaseModel):
+    connection_id: str
+    task: str
+    operation: str
+    params: dict = {}
+
+
+@app.post("/api/race", dependencies=[Depends(admin)])
+async def start_race(body: RaceRequest):
+    conn = db.get_connection(body.connection_id)
+    if not conn:
+        raise HTTPException(404, "no such connection")
+    return {"race_id": race.start_race(conn, body.task, body.operation, body.params, PUBLIC_URL, jobs.tasks)}
+
+
+# --- Public: docs, REST gateway, MCP ------------------------------------------------------------
+
+@app.get("/specs")
+def public_specs():
+    return [{"domain": s["domain"], "title": s["title"], "operations": len(s["spec"]["operations"]),
+             "openapi": f"{PUBLIC_URL}/specs/{s['domain']}/openapi.json"} for s in db.list_sites()]
+
+
+@app.get("/specs/{domain}/openapi.json")
+def public_openapi(domain: str):
+    site = db.get_site(domain)
+    if not site:
+        raise HTTPException(404)
+    return site["spec"]["openapi"]
+
+
+@app.get("/connect/{domain}", dependencies=[Depends(admin)])
+async def reconnect(domain: str, connection: str | None = None):
+    """Target of reconnect_url: starts a login-only job; the operator page shows its live view."""
+    try:
+        job_id = jobs.start_connect(domain, connection)
+    except ValueError as e:
+        raise HTTPException(404, str(e))
+    return RedirectResponse(f"/?job={job_id}")
+
+
+@app.post("/v1/{domain}/{operation}")
+async def call_operation(domain: str, operation: str, request: Request):
+    auth = request.headers.get("authorization", "")
+    try:
+        conn = gateway.connection_for_key(auth.removeprefix("Bearer ").strip())
+        if conn["domain"] != domain:
+            raise gateway.GatewayError("unauthorized", f"this API key is for {conn['domain']}", 403)
+        try:
+            params = await request.json() if await request.body() else {}
+        except ValueError:
+            raise gateway.GatewayError("bad_request", "body must be a JSON object")
+        output, meta = await gateway.execute(conn, operation, params or {}, PUBLIC_URL)
+        return JSONResponse(output, headers={"X-SK-Seconds": str(meta["seconds"]), "X-SK-Model-Tokens": "0"})
+    except gateway.GatewayError as e:
+        return JSONResponse({"error": e.code, "message": e.message, **e.extra}, status_code=e.status)
+
+
 @app.get("/", response_class=HTMLResponse, dependencies=[Depends(admin)])
 def index():
     return DEV_PAGE
@@ -102,7 +198,7 @@ DEV_PAGE = """<!doctype html><html><head><meta charset=utf-8><title>Skeleton Key
 <div id=status></div><button id=done>Done (I finished)</button> <button id=stop>Stop job</button>
 <div id=wrap><iframe id=live></iframe><div id=log></div></div>
 <script>
-let job=null, after=0, liveSet=false;
+let job=new URLSearchParams(location.search).get('job'), after=0, liveSet=false;
 f.onsubmit=async e=>{e.preventDefault();const btn=f.querySelector('button');if(btn.disabled)return;btn.disabled=true;
  try{const r=await fetch('/api/jobs',{method:'POST',headers:{'Content-Type':'application/json'},
  body:JSON.stringify({site_url:url.value,hints:hints.value||null})});job=(await r.json()).id;after=0;liveSet=false;log.textContent='';}
