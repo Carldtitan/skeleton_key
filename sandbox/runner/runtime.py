@@ -3,6 +3,8 @@
 Every operation calls request(); it sends the call like Chrome would (TLS fingerprint included),
 attaches the user's session, and turns HTTP failures into typed errors an agent can act on.
 """
+import json as _json
+
 from curl_cffi import requests as _requests
 
 # Details of the most recent HTTP call, used by the verifier to explain failures.
@@ -22,7 +24,7 @@ def request(session, method, url, *, params=None, json=None, data=None, headers=
     h.update(headers or {})
     resp = _requests.request(method, url, params=params, json=json, data=data, headers=h,
                              cookies=session.get("cookies") or {}, impersonate="chrome", timeout=30)
-    body = resp.text
+    body = resp.content.decode("utf-8", errors="replace")  # resp.text may guess latin-1
     LAST.clear()
     LAST.update(method=method, url=str(resp.url), status=resp.status_code, body=body[:2000])
     s = resp.status_code
@@ -41,6 +43,6 @@ def request(session, method, url, *, params=None, json=None, data=None, headers=
     if not expect_json:
         return body
     try:
-        return resp.json()
+        return _json.loads(body)
     except ValueError:
         raise OperationError("upstream_error", "expected JSON but got something else", s)
