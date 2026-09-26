@@ -5,3 +5,4 @@ Md files/
 infra/state.json
 __pycache__/
 *.pyc
+.mcp.json
