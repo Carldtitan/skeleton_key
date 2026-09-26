@@ -1,0 +1,8 @@
+services:
+  agentd:
+    build: .
+    restart: unless-stopped
+    network_mode: host  # binds to the VPC address given in SK_BIND_IP only
+    env_file: .env
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
