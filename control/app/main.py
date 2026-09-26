@@ -90,8 +90,10 @@ DEV_PAGE = """<!doctype html><html><head><meta charset=utf-8><title>Skeleton Key
 <div id=wrap><iframe id=live></iframe><div id=log></div></div>
 <script>
 let job=null, after=0, liveSet=false;
-f.onsubmit=async e=>{e.preventDefault();const r=await fetch('/api/jobs',{method:'POST',headers:{'Content-Type':'application/json'},
- body:JSON.stringify({site_url:url.value,hints:hints.value||null})});job=(await r.json()).id;after=0;liveSet=false;log.textContent='';};
+f.onsubmit=async e=>{e.preventDefault();const btn=f.querySelector('button');if(btn.disabled)return;btn.disabled=true;
+ try{const r=await fetch('/api/jobs',{method:'POST',headers:{'Content-Type':'application/json'},
+ body:JSON.stringify({site_url:url.value,hints:hints.value||null})});job=(await r.json()).id;after=0;liveSet=false;log.textContent='';}
+ finally{setTimeout(()=>btn.disabled=false,5000)}};
 done.onclick=()=>job&&fetch(`/api/jobs/${job}/human-done`,{method:'POST'});
 stop.onclick=()=>job&&fetch(`/api/jobs/${job}/stop`,{method:'POST'});
 setInterval(async()=>{if(!job)return;const d=await (await fetch(`/api/jobs/${job}?after=${after}`)).json();

@@ -25,7 +25,15 @@ MARK_JS = """
   const sel = 'a[href], button, input:not([type=hidden]), select, textarea, summary, [role=button], [role=link], '
     + '[role=tab], [role=menuitem], [role=checkbox], [role=switch], [role=option], [role=combobox], [onclick], [contenteditable=true]';
   const vw = innerWidth, vh = innerHeight, out = [], seen = new Set();
-  for (const e of document.querySelectorAll(sel)) {
+  // Many apps build menus from plain divs (e.g. floating-ui portals), so also take the outermost
+  // element of any pointer-cursor region.
+  const pointer = [...document.querySelectorAll('div, span, li, p, img, svg, label')].filter(e => {
+    if (getComputedStyle(e).cursor !== 'pointer') return false;
+    const p = e.parentElement;
+    return !p || getComputedStyle(p).cursor !== 'pointer';
+  });
+  const candidates = [...new Set([...document.querySelectorAll(sel), ...pointer])];
+  for (const e of candidates) {
     const r = e.getBoundingClientRect();
     if (r.width < 4 || r.height < 4 || r.bottom < 0 || r.right < 0 || r.top > vh || r.left > vw) continue;
     const st = getComputedStyle(e);
@@ -84,6 +92,13 @@ class SandboxBrowser:
         return pages[-1]  # newest tab is the one the user just opened
 
     async def _on_response(self, response):
+        # Must never raise: an exception here would be lost in the event emitter and the request dropped.
+        try:
+            await self._record(response)
+        except Exception as e:
+            db.add_event(self.job_id, "recorder_error", {"url": response.url[:200], "error": str(e)[:200]})
+
+    async def _record(self, response):
         req = response.request
         if req.resource_type not in KEEP_TYPES or any(h in req.url for h in NOISE_HOSTS):
             return
@@ -98,10 +113,12 @@ class SandboxBrowser:
             resp_headers = await response.all_headers()
         except Exception:
             req_headers, resp_headers = req.headers, response.headers
+        raw = req.post_data_buffer or b""  # post_data raises on non-UTF-8 bodies
+        req_body = raw.decode("utf-8", errors="replace")
         db.add_request(
             self.job_id, self.step,
             method=req.method, url=req.url, resource_type=req.resource_type,
-            req_headers=req_headers, req_body=(req.post_data or "")[:MAX_BODY],
+            req_headers=req_headers, req_body=req_body[:MAX_BODY],
             status=response.status, resp_headers=resp_headers, resp_body=body[:MAX_BODY],
         )
 

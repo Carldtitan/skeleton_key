@@ -14,4 +14,4 @@ INFERENCE_KEY = os.environ["VULTR_INFERENCE_KEY"]
 BROWSE_MODEL = os.environ.get("SK_BROWSE_MODEL", "qwen3.8-27b")
 CODE_MODEL = os.environ.get("SK_CODE_MODEL", "glm-5.3")
 
-EXPLORE_MAX_STEPS = int(os.environ.get("SK_EXPLORE_MAX_STEPS", "40"))
+EXPLORE_MAX_STEPS = int(os.environ.get("SK_EXPLORE_MAX_STEPS", "60"))

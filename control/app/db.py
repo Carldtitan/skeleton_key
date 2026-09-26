@@ -130,6 +130,14 @@ def add_request(job_id, step, **r):
         )
 
 
+def requests_for(job_id, step=None):
+    q, args = "SELECT * FROM requests WHERE job_id=?", [job_id]
+    if step is not None:
+        q, args = q + " AND step=?", args + [step]
+    with conn() as c:
+        return [dict(r) for r in c.execute(q + " ORDER BY id", args)]
+
+
 def request_count(job_id):
     with conn() as c:
         return c.execute("SELECT COUNT(*) FROM requests WHERE job_id=?", (job_id,)).fetchone()[0]
