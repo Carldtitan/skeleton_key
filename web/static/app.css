@@ -258,7 +258,7 @@ pre.code { margin: 0; padding: 14px 16px; border-radius: var(--radius-md); backg
 /* ---------- race ---------- */
 .race-form { display: grid; grid-template-columns: 180px minmax(0, 1fr) auto; gap: 12px; align-items: end; }
 @media (max-width: 900px) { .race-form { grid-template-columns: minmax(0, 1fr); } }
-.lanes { display: grid; grid-template-columns: repeat(var(--lanes, 3), minmax(0, 1fr)); gap: 16px; }
+.lanes { display: grid; grid-template-columns: repeat(var(--lanes, 4), minmax(0, 1fr)); gap: 14px; }
 @media (max-width: 1200px) { .lanes { grid-template-columns: minmax(0, 1fr); } }
 .lane { display: grid; gap: 14px; align-content: start; min-width: 0; padding: 18px; border: 1px solid var(--line);
         border-radius: var(--radius-lg); background: var(--ivory); box-shadow: var(--shadow-card); }
@@ -269,7 +269,7 @@ pre.code { margin: 0; padding: 14px 16px; border-radius: var(--radius-md); backg
 .lane .log .res { color: #cdb8ab; }
 .metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 12px; }
 .metric dt { color: var(--text-muted); font-size: 11px; font-weight: 740; letter-spacing: .07em; text-transform: uppercase; }
-.metric dd { margin: 4px 0 0; font-size: 34px; font-weight: 680; letter-spacing: -.035em; line-height: 1; font-variant-numeric: tabular-nums; }
+.metric dd { margin: 4px 0 0; font-size: 28px; font-weight: 680; letter-spacing: -.035em; line-height: 1; font-variant-numeric: tabular-nums; }
 .metric dd.good { color: var(--sage); } .metric dd.bad { color: var(--clay); }
 .answer { padding-top: 12px; border-top: 1px solid var(--line); font-size: 14px; color: var(--text-quiet); }
 

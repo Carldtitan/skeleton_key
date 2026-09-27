@@ -1,8 +1,9 @@
 """Race: the same task done three ways, all acting as the same logged-in user.
 
-  frontier_browser - frontier model (Anthropic, optional baseline) driving a browser
-  open_browser     - open model on Vultr driving a browser (identical harness to the frontier lane)
-  skeleton_key     - the same open model on Vultr, text only, calling the generated operations as tools
+  frontier_browser      - frontier model (Anthropic, optional baseline) driving a browser
+  frontier_skeleton_key - the same frontier model calling the generated operations as tools
+  open_browser          - open model on Vultr driving a browser (identical harness to the frontier lane)
+  skeleton_key          - the same open model on Vultr, text only, calling the generated operations as tools
 
 Fairness rules, so a failure is the model's fault and not the harness's or the scorer's:
   - Ground truth comes from an oracle (the site's verified operations, called directly before the race),
@@ -246,6 +247,54 @@ async def skeleton_key_contestant(race_id, conn, task, base_url):
             "failure": failure, "tool_calls": len(calls_made), **summarize_usage(race_id, name)}
 
 
+async def frontier_skeleton_key_contestant(race_id, conn, task, base_url):
+    """The frontier model with the same generated operations as tools (same specs, same gateway, same limits)."""
+    name = "frontier_skeleton_key"
+    llm.meter.set((race_id, name))
+    site = db.get_site(conn["domain"])
+    tools = [{"name": t["function"]["name"], "description": t["function"]["description"],
+              "input_schema": t["function"]["parameters"]} for t in tool_specs(site)]
+    system = TOOL_PROMPT.format(site=conn["domain"], task=task)
+    messages = [{"role": "user", "content": task}]
+    answer, error, failure, calls_made = None, None, None, []
+    started, turns, retried = time.monotonic(), 0, False
+    try:
+        while turns < MAX_TOOL_TURNS:
+            turns += 1
+            response = await llm.chat_anthropic_tools(FRONTIER_MODEL, system, messages, tools)
+            if response.stop_reason == "refusal":
+                failure, error = "refusal", "the model declined"
+                break
+            uses = [b for b in response.content if b.type == "tool_use"]
+            text = "".join(b.text for b in response.content if b.type == "text").strip()
+            if not uses and not text and not retried:
+                retried = True  # one retry on an empty reply, same rule as the other lanes
+                messages += [{"role": "assistant", "content": response.content},
+                             {"role": "user", "content": "Answer the task now."}]
+                continue
+            messages.append({"role": "assistant", "content": response.content})
+            if not uses:
+                answer = text or None
+                break
+            results = []
+            for use in uses:
+                try:
+                    output, _ = await gateway.execute(conn, use.name, dict(use.input or {}), base_url)
+                    result = json.dumps(output, default=str)[:12000]
+                except gateway.GatewayError as e:
+                    result = json.dumps({"error": e.code, "message": e.message})
+                calls_made.append(use.name)
+                event(race_id, name, "step", step=turns, action=f"{use.name}()", thought=result[:160])
+                results.append({"type": "tool_result", "tool_use_id": use.id, "content": result})
+            messages.append({"role": "user", "content": results})
+        else:
+            failure = "step_limit"
+    except Exception as e:
+        failure, error = "harness_error", f"{type(e).__name__}: {str(e)[:200]}"
+    return {"seconds": round(time.monotonic() - started, 1), "steps": turns, "answer": answer, "error": error,
+            "failure": failure, "tool_calls": len(calls_made), **summarize_usage(race_id, name)}
+
+
 async def judge(race_id, task, truth, results):
     answers = json.dumps({k: " ".join(str(v.get("answer") or "(no answer)").split()) for k, v in results.items()},
                          indent=1)
@@ -275,15 +324,18 @@ async def run_race(race_id, conn, task, base_url):
         async def frontier_chat(messages):
             return await llm.chat_anthropic(FRONTIER_MODEL, messages)
 
-        runs = {"open_browser": browser_contestant(race_id, "open_browser", vultr_chat, conn, task, root, sandboxes)}
+        runs = {}
         if ANTHROPIC_API_KEY:
             runs["frontier_browser"] = browser_contestant(race_id, "frontier_browser", frontier_chat, conn, task,
                                                           root, sandboxes)
+            runs["frontier_skeleton_key"] = frontier_skeleton_key_contestant(race_id, conn, task, base_url)
+        runs["open_browser"] = browser_contestant(race_id, "open_browser", vultr_chat, conn, task, root, sandboxes)
         runs["skeleton_key"] = skeleton_key_contestant(race_id, conn, task, base_url)
         names = list(runs)
         results = dict(zip(names, await asyncio.gather(*runs.values())))
         grades = await judge(race_id, task, truth, results) if truth else {}
-        models = {"frontier_browser": FRONTIER_MODEL, "open_browser": BROWSE_MODEL, "skeleton_key": TOOL_AGENT_MODEL}
+        models = {"frontier_browser": FRONTIER_MODEL, "frontier_skeleton_key": FRONTIER_MODEL,
+                  "open_browser": BROWSE_MODEL, "skeleton_key": TOOL_AGENT_MODEL}
         for k, v in results.items():
             v["model"] = models[k]
             v["correct"] = grades.get(k, {}).get("correct")

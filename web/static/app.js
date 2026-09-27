@@ -383,7 +383,8 @@ function Generate({ id }) {
 
 /* ---------- race ---------- */
 
-const LANES = [["frontier_browser", "browser"], ["open_browser", "browser"], ["skeleton_key", "Skeleton Key"]];
+const LANES = [["frontier_browser", "browser"], ["frontier_skeleton_key", "Skeleton Key"], ["open_browser", "browser"],
+  ["skeleton_key", "Skeleton Key"]];
 const shortModel = (m) => {
   if (!m) return "";
   const c = m.match(/^claude-([a-z]+)-(\d+)(?:-(\d+))?$/);
@@ -408,7 +409,7 @@ function Race({ raceId, overview }) {
     location.hash = `#/race/${race_id}`;
   };
   return html`
-    <${PageHeader} eyebrow="Race" title="Same task, three ways">
+    <${PageHeader} eyebrow="Race" title="Same task, four ways">
       <${Help}><ol><li>Pick a task and press Run.</li><li>All lanes act as the same logged-in user.</li>
         <li>✓ / ✗ is checked against the site's real data.</li></ol><//>
     <//>
@@ -436,17 +437,17 @@ function RaceView({ id, frontier, open, onTask }) {
   useEffect(() => { if (data?.task) onTask(data.task); }, [data?.task, id]);
   if (!data) return null;
   const results = data.result?.results || {};
-  const lanes = LANES.filter(([k]) => k !== "frontier_browser" || frontier || results[k] || data.contestants[k]);
+  const lanes = LANES.filter(([k]) => !k.startsWith("frontier") || frontier || results[k] || data.contestants[k]);
   const elapsed = now / 1000 - data.started;
   return html`
     <div class="lanes" style=${`--lanes:${lanes.length}`}>
       ${lanes.map(([k, kind]) => {
         const c = data.contestants[k] || { steps: [] };
         const r = results[k];
-        const model = r?.model || (k === "frontier_browser" ? frontier : open);
+        const model = r?.model || (k.startsWith("frontier") ? frontier : open);
         const live = !r && c.live_url && data.status === "racing";
         const verdict = r ? (r.correct === true ? ["good", "✓"] : r.correct === false ? ["bad", "✗"] : ["", "?"]) : ["", "…"];
-        return html`<div class="lane ${k === "skeleton_key" ? "ours" : ""}">
+        return html`<div class="lane ${kind === "Skeleton Key" ? "ours" : ""}">
           <h3>${shortModel(model)} · ${kind}</h3>
           ${live ? html`<${Frame} url=${c.live_url} />`
             : html`<div class="log">${c.steps.map((s) => html`<div>${s.step}. ${s.action}${s.thought

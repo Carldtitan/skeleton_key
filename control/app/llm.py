@@ -120,6 +120,28 @@ async def chat_anthropic(model, messages, max_tokens=16000):
     return text, usage
 
 
+async def chat_anthropic_tools(model, system, messages, tools, max_tokens=16000):
+    """One tool-use turn on the frontier baseline. Returns the SDK response; callers append
+    response.content unchanged so thinking blocks are passed back as the API expects."""
+    import anthropic
+
+    from .config import ANTHROPIC_API_KEY, ANTHROPIC_PRICES
+    started = time.monotonic()
+    async with anthropic.AsyncAnthropic(api_key=ANTHROPIC_API_KEY) as client:
+        response = await client.beta.messages.create(
+            model=model, max_tokens=max_tokens, system=system, messages=messages, tools=tools,
+            thinking={"type": "adaptive"},
+            betas=["server-side-fallback-2026-07-01"], fallbacks="default",
+        )
+    tag = meter.get()
+    if tag:
+        p_in, p_out = ANTHROPIC_PRICES.get(model, (0.0, 0.0))
+        u = response.usage
+        db.add_usage(tag[0], tag[1], model, u.input_tokens, u.output_tokens,
+                     u.input_tokens * p_in + u.output_tokens * p_out, time.monotonic() - started)
+    return response
+
+
 async def chat_tools(model, messages, tools, max_tokens=4000):
     """One tool-calling turn on Vultr inference. Returns the assistant message dict (may contain tool_calls)."""
     body = {"model": model, "messages": messages, "tools": tools, "max_tokens": max_tokens, "temperature": 0.2}

@@ -20,7 +20,7 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 ENV = dict(l.split("=", 1) for l in (ROOT / ".env").read_text().splitlines() if "=" in l and not l.startswith("#"))
 BASE = "https://45-76-254-85.sslip.io"  # straight to the Vultr control plane
 AUTH = ("admin", ENV["SK_ADMIN_PASSWORD"])
-LANES = ("frontier_browser", "open_browser", "skeleton_key")
+LANES = ("frontier_browser", "frontier_skeleton_key", "open_browser", "skeleton_key")
 OUT = ROOT / "bench"
 
 
