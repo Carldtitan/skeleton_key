@@ -103,7 +103,9 @@ async def perform(b: SandboxBrowser, act, elements):
         else:
             await loc.select_option(label=str(act.get("text", "")), timeout=8_000)
     elif a == "scroll":
-        return await scroll(page, 700 if act.get("direction", "down") == "down" else -700)
+        # ~80% of the viewport so consecutive screens overlap and nothing falls between them.
+        step = int(((page.viewport_size or {}).get("height") or 800) * 0.8)
+        return await scroll(page, step if act.get("direction", "down") == "down" else -step)
     elif a == "navigate":
         await page.goto(act["url"], wait_until="domcontentloaded", timeout=30_000)
     elif a == "back":

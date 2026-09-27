@@ -23,7 +23,7 @@ PUBLIC_URL = os.environ.get("SK_PUBLIC_URL") or f"https://{os.environ.get('SK_DO
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY") or None
 FRONTIER_MODEL = os.environ.get("SK_FRONTIER_MODEL", "claude-opus-5")
 TOOL_AGENT_MODEL = os.environ.get("SK_TOOL_AGENT_MODEL", BROWSE_MODEL)
-JUDGE_MODEL = os.environ.get("SK_JUDGE_MODEL", "glm-5.3-flash")
+JUDGE_MODEL = os.environ.get("SK_JUDGE_MODEL", "glm-5.3")
 
 # USD per token for the frontier baseline (Anthropic list prices).
 ANTHROPIC_PRICES = {

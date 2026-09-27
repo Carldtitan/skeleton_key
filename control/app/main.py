@@ -323,6 +323,15 @@ async def start_race(body: RaceRequest):
     return {"race_id": race.start_race(conn, body.task, PUBLIC_URL, jobs.tasks)}
 
 
+@app.post("/api/bench/validate/{domain}", dependencies=[Depends(admin)])
+async def bench_validate(domain: str):
+    """Check every benchmark task is answerable from the site's UI before it's used to score browsers."""
+    conn = db.connection_for_domain(domain)
+    if not conn or conn["status"] != "active":
+        raise HTTPException(409, "connect this site first")
+    return {"tasks": await race.validate_tasks(conn, PUBLIC_URL)}
+
+
 @app.get("/api/race/{race_id}", dependencies=[Depends(admin)])
 def race_status(race_id: str):
     job = db.get_job(race_id)

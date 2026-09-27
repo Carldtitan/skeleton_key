@@ -1,0 +1,38 @@
+[
+  {
+    "id": "categories_first3",
+    "question": "What are the first 3 categories listed under 'Browse by Category' on Luma's Discover page?",
+    "oracle": [{"op": "list_discover_categories", "params": {}}],
+    "ui": ["https://luma.com/discover"]
+  },
+  {
+    "id": "crypto_event_count",
+    "question": "How many events are in Luma's Crypto category?",
+    "oracle": [{"op": "get_category", "params": {"slug": "crypto"}}],
+    "ui": ["https://luma.com/crypto"]
+  },
+  {
+    "id": "ai_subscribers",
+    "question": "How many subscribers does Luma's AI category have?",
+    "oracle": [{"op": "get_category", "params": {"slug": "ai"}}],
+    "ui": ["https://luma.com/ai"]
+  },
+  {
+    "id": "crypto_vs_climate",
+    "question": "Which Luma category has more events: Crypto or Climate? Give both counts.",
+    "oracle": [{"op": "get_category", "params": {"slug": "crypto"}}, {"op": "get_category", "params": {"slug": "climate"}}],
+    "ui": ["https://luma.com/crypto", "https://luma.com/climate"]
+  },
+  {
+    "id": "my_upcoming_events",
+    "question": "Do I have any upcoming events on Luma? Answer yes or no, and name them if yes.",
+    "oracle": [{"op": "list_my_events", "params": {"period": "future"}}],
+    "ui": ["https://luma.com/home"]
+  },
+  {
+    "id": "calendars_followed",
+    "question": "How many calendars do I follow on Luma?",
+    "oracle": [{"op": "list_followed_calendars", "params": {}}],
+    "ui": ["https://luma.com/home/calendars"]
+  }
+]

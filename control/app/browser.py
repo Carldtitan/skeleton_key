@@ -122,8 +122,12 @@ class SandboxBrowser:
             status=response.status, resp_headers=resp_headers, resp_body=body[:MAX_BODY],
         )
 
-    async def observe(self):
-        """Screenshot with numbered marks plus the matching element list."""
+    async def observe(self, include_text=False, max_text=6000):
+        """Screenshot with numbered marks plus the matching element list.
+
+        include_text adds the whole page's visible text (not just the viewport), so an agent can read
+        content that doesn't fit on one screen instead of depending on pixel-perfect scrolling.
+        """
         page = self.page
         try:
             await page.wait_for_load_state("domcontentloaded", timeout=10_000)
@@ -132,12 +136,16 @@ class SandboxBrowser:
         elements = await page.evaluate(MARK_JS)
         shot = await page.screenshot(type="jpeg", quality=70)
         await page.evaluate(UNMARK_JS)
-        return {
+        obs = {
             "url": page.url,
             "title": await page.title(),
             "elements": elements,
             "screenshot_b64": base64.b64encode(shot).decode(),
         }
+        if include_text:
+            text = await page.evaluate("() => (document.body.innerText || '').replace(/\\s+/g, ' ').trim()")
+            obs["text"] = text[:max_text] + (" …(truncated)" if len(text) > max_text else "")
+        return obs
 
     async def plain_screenshot(self):
         return base64.b64encode(await self.page.screenshot(type="jpeg", quality=60)).decode()
