@@ -1,80 +1,297 @@
 [
-  {
-    "id": "categories_first3", "difficulty": "easy",
-    "question": "What are the first 3 categories listed under 'Browse by Category' on Luma's Discover page?",
-    "oracle": [{"op": "list_discover_categories", "params": {}}],
-    "ui": ["https://luma.com/discover"]
-  },
-  {
-    "id": "crypto_event_count", "difficulty": "easy",
-    "question": "How many events are in Luma's Crypto category?",
-    "oracle": [{"op": "get_category", "params": {"slug": "crypto"}}],
-    "ui": ["https://luma.com/crypto"]
-  },
-  {
-    "id": "ai_subscribers", "difficulty": "easy",
-    "question": "How many subscribers does Luma's AI category have?",
-    "oracle": [{"op": "get_category", "params": {"slug": "ai"}}],
-    "ui": ["https://luma.com/ai"]
-  },
-  {
-    "id": "crypto_vs_climate", "difficulty": "easy",
-    "question": "Which Luma category has more events: Crypto or Climate? Give both counts.",
-    "oracle": [{"op": "get_category", "params": {"slug": "crypto"}}, {"op": "get_category", "params": {"slug": "climate"}}],
-    "ui": ["https://luma.com/crypto", "https://luma.com/climate"]
-  },
-  {
-    "id": "my_upcoming_events", "difficulty": "easy",
-    "question": "Do I have any upcoming events on Luma? Answer yes or no, and name them if yes.",
-    "oracle": [{"op": "list_my_events", "params": {"period": "future"}}],
-    "ui": ["https://luma.com/home"]
-  },
-  {
-    "id": "calendars_followed", "difficulty": "easy",
-    "question": "How many calendars do I follow on Luma?",
-    "oracle": [{"op": "list_followed_calendars", "params": {}}],
-    "ui": ["https://luma.com/home/calendars"]
-  },
-  {
-    "id": "most_subscribed_of_five", "difficulty": "hard",
-    "question": "Among Luma's Crypto, Climate, Fitness, Wellness and Arts & Culture categories, which has the most subscribers? Give each one's subscriber count.",
-    "oracle": [{"op": "get_category", "params": {"slug": "crypto"}}, {"op": "get_category", "params": {"slug": "climate"}},
-               {"op": "get_category", "params": {"slug": "fitness"}}, {"op": "get_category", "params": {"slug": "wellness"}},
-               {"op": "get_category", "params": {"slug": "arts"}}],
-    "ui": ["https://luma.com/crypto", "https://luma.com/climate", "https://luma.com/fitness", "https://luma.com/wellness", "https://luma.com/arts"]
-  },
-  {
-    "id": "most_subscribed_overall", "difficulty": "hard",
-    "question": "Which Luma discover category has the most subscribers, and how many subscribers does it have?",
-    "oracle": [{"op": "list_discover_categories", "params": {}}],
-    "ui": ["https://luma.com/discover", "https://luma.com/ai", "https://luma.com/tech", "https://luma.com/crypto", "https://luma.com/arts",
-           "https://luma.com/fitness", "https://luma.com/wellness", "https://luma.com/food", "https://luma.com/climate",
-           "https://luma.com/books", "https://luma.com/games", "https://luma.com/family", "https://luma.com/running"]
-  },
-  {
-    "id": "top2_subscribed", "difficulty": "hard",
-    "question": "Name the two Luma discover categories with the most subscribers, with their subscriber counts, in order.",
-    "oracle": [{"op": "list_discover_categories", "params": {}}],
-    "ui": ["https://luma.com/discover", "https://luma.com/ai", "https://luma.com/tech", "https://luma.com/crypto", "https://luma.com/arts",
-           "https://luma.com/fitness", "https://luma.com/wellness", "https://luma.com/food", "https://luma.com/climate",
-           "https://luma.com/books", "https://luma.com/games", "https://luma.com/family", "https://luma.com/running"]
-  },
-  {
-    "id": "profile_name_bio", "difficulty": "hard",
-    "question": "What first name is set on my Luma profile, and is my bio empty?",
-    "oracle": [{"op": "get_current_user", "params": {}}],
-    "ui": ["https://luma.com/settings"]
-  },
-  {
-    "id": "categories_under_600", "difficulty": "hard",
-    "question": "How many of Luma's discover categories have fewer than 600 events, and which are they?",
-    "oracle": [{"op": "list_discover_categories", "params": {}}],
-    "ui": ["https://luma.com/discover"]
-  },
-  {
-    "id": "new_york_events", "difficulty": "hard",
-    "question": "How many events does Luma list for New York under 'Explore Local Events'?",
-    "oracle": [{"op": "list_discover_places", "params": {}}],
-    "ui": ["https://luma.com/discover"]
-  }
+ {
+  "id": "categories_first3",
+  "difficulty": "easy",
+  "question": "What are the first 3 categories listed under 'Browse by Category' on Luma's Discover page?",
+  "oracle": [
+   {
+    "op": "list_discover_categories",
+    "params": {}
+   }
+  ],
+  "ui": [
+   "https://luma.com/discover"
+  ]
+ },
+ {
+  "id": "crypto_event_count",
+  "difficulty": "easy",
+  "question": "How many events are in Luma's Crypto category?",
+  "oracle": [
+   {
+    "op": "get_category",
+    "params": {
+     "slug": "crypto"
+    }
+   }
+  ],
+  "ui": [
+   "https://luma.com/crypto"
+  ]
+ },
+ {
+  "id": "ai_subscribers",
+  "difficulty": "easy",
+  "question": "How many subscribers does Luma's AI category have?",
+  "oracle": [
+   {
+    "op": "get_category",
+    "params": {
+     "slug": "ai"
+    }
+   }
+  ],
+  "ui": [
+   "https://luma.com/ai"
+  ]
+ },
+ {
+  "id": "crypto_vs_climate",
+  "difficulty": "easy",
+  "question": "Which Luma category has more events: Crypto or Climate? Give both counts.",
+  "oracle": [
+   {
+    "op": "get_category",
+    "params": {
+     "slug": "crypto"
+    }
+   },
+   {
+    "op": "get_category",
+    "params": {
+     "slug": "climate"
+    }
+   }
+  ],
+  "ui": [
+   "https://luma.com/crypto",
+   "https://luma.com/climate"
+  ]
+ },
+ {
+  "id": "my_upcoming_events",
+  "difficulty": "easy",
+  "question": "Do I have any upcoming events on Luma? Answer yes or no, and name them if yes.",
+  "oracle": [
+   {
+    "op": "list_my_events",
+    "params": {
+     "period": "future"
+    }
+   }
+  ],
+  "ui": [
+   "https://luma.com/home"
+  ]
+ },
+ {
+  "id": "calendars_followed",
+  "difficulty": "easy",
+  "question": "How many calendars do I follow on Luma?",
+  "oracle": [
+   {
+    "op": "list_followed_calendars",
+    "params": {}
+   }
+  ],
+  "ui": [
+   "https://luma.com/home/calendars"
+  ]
+ },
+ {
+  "id": "most_subscribed_of_five",
+  "difficulty": "hard",
+  "question": "Among Luma's Crypto, Climate, Fitness, Wellness and Arts & Culture categories, which has the most subscribers? Give each one's subscriber count.",
+  "oracle": [
+   {
+    "op": "get_category",
+    "params": {
+     "slug": "crypto"
+    }
+   },
+   {
+    "op": "get_category",
+    "params": {
+     "slug": "climate"
+    }
+   },
+   {
+    "op": "get_category",
+    "params": {
+     "slug": "fitness"
+    }
+   },
+   {
+    "op": "get_category",
+    "params": {
+     "slug": "wellness"
+    }
+   },
+   {
+    "op": "get_category",
+    "params": {
+     "slug": "arts"
+    }
+   }
+  ],
+  "ui": [
+   "https://luma.com/crypto",
+   "https://luma.com/climate",
+   "https://luma.com/fitness",
+   "https://luma.com/wellness",
+   "https://luma.com/arts"
+  ]
+ },
+ {
+  "id": "most_subscribed_overall",
+  "difficulty": "hard",
+  "question": "Which Luma discover category has the most subscribers, and how many subscribers does it have?",
+  "oracle": [
+   {
+    "op": "list_discover_categories",
+    "params": {}
+   }
+  ],
+  "ui": [
+   "https://luma.com/discover",
+   "https://luma.com/ai",
+   "https://luma.com/tech",
+   "https://luma.com/crypto",
+   "https://luma.com/arts",
+   "https://luma.com/fitness",
+   "https://luma.com/wellness",
+   "https://luma.com/food",
+   "https://luma.com/climate",
+   "https://luma.com/books",
+   "https://luma.com/games",
+   "https://luma.com/family",
+   "https://luma.com/running"
+  ]
+ },
+ {
+  "id": "top2_subscribed",
+  "difficulty": "hard",
+  "question": "Name the two Luma discover categories with the most subscribers, with their subscriber counts, in order.",
+  "oracle": [
+   {
+    "op": "list_discover_categories",
+    "params": {}
+   }
+  ],
+  "ui": [
+   "https://luma.com/discover",
+   "https://luma.com/ai",
+   "https://luma.com/tech",
+   "https://luma.com/crypto",
+   "https://luma.com/arts",
+   "https://luma.com/fitness",
+   "https://luma.com/wellness",
+   "https://luma.com/food",
+   "https://luma.com/climate",
+   "https://luma.com/books",
+   "https://luma.com/games",
+   "https://luma.com/family",
+   "https://luma.com/running"
+  ]
+ },
+ {
+  "id": "profile_name_bio",
+  "difficulty": "hard",
+  "question": "What first name is set on my Luma profile, and is my bio empty?",
+  "oracle": [
+   {
+    "op": "get_current_user",
+    "params": {}
+   }
+  ],
+  "ui": [
+   "https://luma.com/settings"
+  ]
+ },
+ {
+  "id": "categories_under_600",
+  "difficulty": "hard",
+  "question": "How many of Luma's discover categories have fewer than 600 events, and which are they?",
+  "oracle": [
+   {
+    "op": "list_discover_categories",
+    "params": {}
+   }
+  ],
+  "ui": [
+   "https://luma.com/discover"
+  ]
+ },
+ {
+  "id": "new_york_events",
+  "difficulty": "hard",
+  "question": "How many events does Luma list for New York under 'Explore Local Events'?",
+  "oracle": [
+   {
+    "op": "list_discover_places",
+    "params": {}
+   }
+  ],
+  "ui": [
+   "https://luma.com/discover"
+  ]
+ },
+ {
+  "id": "rank_cities",
+  "difficulty": "hard",
+  "question": "Rank San Francisco, New York and Atlanta by how many events Luma lists for each under 'Explore Local Events', giving each count.",
+  "oracle": [
+   {
+    "op": "list_discover_places",
+    "params": {}
+   }
+  ],
+  "ui": [
+   "https://luma.com/discover"
+  ]
+ },
+ {
+  "id": "five_categories_events",
+  "difficulty": "hard",
+  "question": "Across Luma's Crypto, Family, Games, Food & Drink and Running categories, which has the most events and which has the fewest? Give each one's event count.",
+  "oracle": [
+   {
+    "op": "get_category",
+    "params": {
+     "slug": "crypto"
+    }
+   },
+   {
+    "op": "get_category",
+    "params": {
+     "slug": "family"
+    }
+   },
+   {
+    "op": "get_category",
+    "params": {
+     "slug": "games"
+    }
+   },
+   {
+    "op": "get_category",
+    "params": {
+     "slug": "food"
+    }
+   },
+   {
+    "op": "get_category",
+    "params": {
+     "slug": "running"
+    }
+   }
+  ],
+  "ui": [
+   "https://luma.com/crypto",
+   "https://luma.com/family",
+   "https://luma.com/games",
+   "https://luma.com/food",
+   "https://luma.com/running"
+  ]
+ }
 ]

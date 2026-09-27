@@ -1,0 +1,175 @@
+[
+ {
+  "id": "dog_parade_going",
+  "difficulty": "easy",
+  "question": "How many people are going to the Tompkins Square Dog Parade on Partiful?",
+  "oracle": [
+   {
+    "op": "get_event_info",
+    "params": {
+     "event_id": "egrwj3biCR6g5MLJ0dbv"
+    }
+   }
+  ],
+  "ui": [
+   "https://partiful.com/e/egrwj3biCR6g5MLJ0dbv"
+  ]
+ },
+ {
+  "id": "pumpkin_festival",
+  "difficulty": "easy",
+  "question": "When is the Calabasas Pumpkin Festival on Partiful, and how many people are going?",
+  "oracle": [
+   {
+    "op": "get_event_info",
+    "params": {
+     "event_id": "ObwA2L6S1BRJkBjn6RDA"
+    }
+   }
+  ],
+  "ui": [
+   "https://partiful.com/e/ObwA2L6S1BRJkBjn6RDA"
+  ]
+ },
+ {
+  "id": "dolls_kill_casting",
+  "difficulty": "easy",
+  "question": "When is the DOLLS KILL CASTING CALL on Partiful, and how many people are going?",
+  "oracle": [
+   {
+    "op": "get_event_info",
+    "params": {
+     "event_id": "faeg8283sN4ckXLAgVlK"
+    }
+   }
+  ],
+  "ui": [
+   "https://partiful.com/e/faeg8283sN4ckXLAgVlK"
+  ]
+ },
+ {
+  "id": "rank_four_events",
+  "difficulty": "hard",
+  "question": "Rank these Partiful events by how many people are going, with each count: Tompkins Square Dog Parade, Calabasas Pumpkin Festival, DOLLS KILL CASTING CALL, and POP THE BALLOON: NYC Edition.",
+  "oracle": [
+   {
+    "op": "get_event_info",
+    "params": {
+     "event_id": "egrwj3biCR6g5MLJ0dbv"
+    }
+   },
+   {
+    "op": "get_event_info",
+    "params": {
+     "event_id": "ObwA2L6S1BRJkBjn6RDA"
+    }
+   },
+   {
+    "op": "get_event_info",
+    "params": {
+     "event_id": "faeg8283sN4ckXLAgVlK"
+    }
+   },
+   {
+    "op": "get_event_info",
+    "params": {
+     "event_id": "cCQOx9Dkn5mD7WEW6QYl"
+    }
+   }
+  ],
+  "ui": [
+   "https://partiful.com/e/egrwj3biCR6g5MLJ0dbv",
+   "https://partiful.com/e/ObwA2L6S1BRJkBjn6RDA",
+   "https://partiful.com/e/faeg8283sN4ckXLAgVlK",
+   "https://partiful.com/e/cCQOx9Dkn5mD7WEW6QYl"
+  ]
+ },
+ {
+  "id": "rank_six_events",
+  "difficulty": "hard",
+  "question": "Rank these six Partiful events by how many people are going, with each count: Tompkins Square Dog Parade, Calabasas Pumpkin Festival, DOLLS KILL CASTING CALL, POP THE BALLOON: NYC Edition, FUTURA: an art & fashion show fundraiser, and BUILD-A-BANGLE.",
+  "oracle": [
+   {
+    "op": "get_event_info",
+    "params": {
+     "event_id": "egrwj3biCR6g5MLJ0dbv"
+    }
+   },
+   {
+    "op": "get_event_info",
+    "params": {
+     "event_id": "ObwA2L6S1BRJkBjn6RDA"
+    }
+   },
+   {
+    "op": "get_event_info",
+    "params": {
+     "event_id": "faeg8283sN4ckXLAgVlK"
+    }
+   },
+   {
+    "op": "get_event_info",
+    "params": {
+     "event_id": "cCQOx9Dkn5mD7WEW6QYl"
+    }
+   },
+   {
+    "op": "get_event_info",
+    "params": {
+     "event_id": "AF0JSslevU3VK1ip9wTv"
+    }
+   },
+   {
+    "op": "get_event_info",
+    "params": {
+     "event_id": "nw6BisKXrKMCEOHXfi7Q"
+    }
+   }
+  ],
+  "ui": [
+   "https://partiful.com/e/egrwj3biCR6g5MLJ0dbv",
+   "https://partiful.com/e/ObwA2L6S1BRJkBjn6RDA",
+   "https://partiful.com/e/faeg8283sN4ckXLAgVlK",
+   "https://partiful.com/e/cCQOx9Dkn5mD7WEW6QYl",
+   "https://partiful.com/e/AF0JSslevU3VK1ip9wTv",
+   "https://partiful.com/e/nw6BisKXrKMCEOHXfi7Q"
+  ]
+ },
+ {
+  "id": "sf_events_dates",
+  "difficulty": "hard",
+  "question": "For these San Francisco Partiful events, give each one's date and going count, and say which happens first: DOLLS KILL CASTING CALL, FUTURA: an art & fashion show fundraiser, Spooky Yap & Craft, and sf clothing swap.",
+  "oracle": [
+   {
+    "op": "get_event_info",
+    "params": {
+     "event_id": "faeg8283sN4ckXLAgVlK"
+    }
+   },
+   {
+    "op": "get_event_info",
+    "params": {
+     "event_id": "AF0JSslevU3VK1ip9wTv"
+    }
+   },
+   {
+    "op": "get_event_info",
+    "params": {
+     "event_id": "UFSfjt3uPDPvj0t0WYz3"
+    }
+   },
+   {
+    "op": "get_event_info",
+    "params": {
+     "event_id": "ebMOF4yMUZl9MjSb7p2x"
+    }
+   }
+  ],
+  "ui": [
+   "https://partiful.com/e/faeg8283sN4ckXLAgVlK",
+   "https://partiful.com/e/AF0JSslevU3VK1ip9wTv",
+   "https://partiful.com/e/UFSfjt3uPDPvj0t0WYz3",
+   "https://partiful.com/e/ebMOF4yMUZl9MjSb7p2x"
+  ]
+ }
+]

@@ -1,0 +1,162 @@
+[
+ {
+  "id": "anthropic_followers",
+  "difficulty": "easy",
+  "question": "How many followers does Anthropic (@anthropicai) have on Cerebral Valley?",
+  "oracle": [
+   {
+    "op": "get_user_follow_counts",
+    "params": {
+     "user_id": "user_39HoKmsw9UvYs52UqkeOkHQJjC8"
+    }
+   }
+  ],
+  "ui": [
+   "https://cerebralvalley.ai/u/anthropicai"
+  ]
+ },
+ {
+  "id": "london_hackathon",
+  "difficulty": "easy",
+  "question": "Which featured Cerebral Valley hackathon takes place in London, and on what date?",
+  "oracle": [
+   {
+    "op": "list_events",
+    "params": {
+     "featured": true,
+     "limit": 50
+    }
+   }
+  ],
+  "ui": [
+   "https://cerebralvalley.ai/events"
+  ]
+ },
+ {
+  "id": "agent_arena_details",
+  "difficulty": "easy",
+  "question": "On Cerebral Valley, when does The Agent Arena Hackathon start and end, and what prizes does it offer?",
+  "oracle": [
+   {
+    "op": "get_event",
+    "params": {
+     "event_slug": "vultr-the-agent-arena"
+    }
+   }
+  ],
+  "ui": [
+   "https://cerebralvalley.ai/events/~/e/vultr-the-agent-arena"
+  ]
+ },
+ {
+  "id": "rank_labs_followers",
+  "difficulty": "hard",
+  "question": "Rank Anthropic (@anthropicai), Google DeepMind (@deepmind), OpenAI (@openai), MongoDB (@mongodb) and AttentionX (@attentionx) on Cerebral Valley by follower count, giving each count.",
+  "oracle": [
+   {
+    "op": "get_user_follow_counts",
+    "params": {
+     "user_id": "user_39HoKmsw9UvYs52UqkeOkHQJjC8"
+    }
+   },
+   {
+    "op": "get_user_follow_counts",
+    "params": {
+     "user_id": "user_38EZnZuPGsxiEPYVRqu1bvCTjFF"
+    }
+   },
+   {
+    "op": "get_user_follow_counts",
+    "params": {
+     "user_id": "user_30wWYLzdWeshFI9iNwH0tFvCZ9y"
+    }
+   },
+   {
+    "op": "get_user_follow_counts",
+    "params": {
+     "user_id": "user_31f4R4h964rgDkuPlUTk9bvoEVq"
+    }
+   },
+   {
+    "op": "get_user_follow_counts",
+    "params": {
+     "user_id": "user_39EyaeiGOX7W82z8ygpGxiprpJq"
+    }
+   }
+  ],
+  "ui": [
+   "https://cerebralvalley.ai/u/anthropicai",
+   "https://cerebralvalley.ai/u/deepmind",
+   "https://cerebralvalley.ai/u/openai",
+   "https://cerebralvalley.ai/u/mongodb",
+   "https://cerebralvalley.ai/u/attentionx"
+  ]
+ },
+ {
+  "id": "labs_following",
+  "difficulty": "hard",
+  "question": "On Cerebral Valley, how many accounts does each of Anthropic (@anthropicai), Google DeepMind (@deepmind), OpenAI (@openai), MongoDB (@mongodb) and AttentionX (@attentionx) follow? Which of them follow anyone?",
+  "oracle": [
+   {
+    "op": "get_user_follow_counts",
+    "params": {
+     "user_id": "user_39HoKmsw9UvYs52UqkeOkHQJjC8"
+    }
+   },
+   {
+    "op": "get_user_follow_counts",
+    "params": {
+     "user_id": "user_38EZnZuPGsxiEPYVRqu1bvCTjFF"
+    }
+   },
+   {
+    "op": "get_user_follow_counts",
+    "params": {
+     "user_id": "user_30wWYLzdWeshFI9iNwH0tFvCZ9y"
+    }
+   },
+   {
+    "op": "get_user_follow_counts",
+    "params": {
+     "user_id": "user_31f4R4h964rgDkuPlUTk9bvoEVq"
+    }
+   },
+   {
+    "op": "get_user_follow_counts",
+    "params": {
+     "user_id": "user_39EyaeiGOX7W82z8ygpGxiprpJq"
+    }
+   }
+  ],
+  "ui": [
+   "https://cerebralvalley.ai/u/anthropicai",
+   "https://cerebralvalley.ai/u/deepmind",
+   "https://cerebralvalley.ai/u/openai",
+   "https://cerebralvalley.ai/u/mongodb",
+   "https://cerebralvalley.ai/u/attentionx"
+  ]
+ },
+ {
+  "id": "compare_two_hackathons",
+  "difficulty": "hard",
+  "question": "On Cerebral Valley, compare The Agent Arena Hackathon and the GPT-6 Astra Hackathon: give each one's city, start date and prizes, and say which starts first.",
+  "oracle": [
+   {
+    "op": "get_event",
+    "params": {
+     "event_slug": "vultr-the-agent-arena"
+    }
+   },
+   {
+    "op": "get_event",
+    "params": {
+     "event_slug": "openai-gpt-6-astra-london"
+    }
+   }
+  ],
+  "ui": [
+   "https://cerebralvalley.ai/events/~/e/vultr-the-agent-arena",
+   "https://cerebralvalley.ai/e/openai-gpt-6-astra-london"
+  ]
+ }
+]

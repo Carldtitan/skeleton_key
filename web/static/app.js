@@ -476,7 +476,7 @@ function Race({ raceId, overview }) {
   const [custom, setCustom] = useState(false);
   const d = domain || sites[0]?.domain;
   useEffect(() => {
-    if (d) api(`/api/race/presets/${d}`).then((p) => { setPresets(p); setTask((t) => (raceId && t ? t : p.tasks[0])); });
+    if (d) api(`/api/race/presets/${d}`).then((p) => { setPresets(p); setTask((t) => (t && (raceId || p.tasks.includes(t)) ? t : p.tasks[0])); });
   }, [d]);
   useEffect(() => { if (presets && task && !presets.tasks.includes(task)) setCustom(true); }, [presets, task]);
   const run = async (e) => {
@@ -491,7 +491,11 @@ function Race({ raceId, overview }) {
     <//>
     <form class="card race-form" onSubmit=${run}>
       <div><label class="field-label" for="rsite">Site</label>
-        <select id="rsite" class="input" value=${d} onChange=${(e) => setDomain(e.target.value)}>
+        <select id="rsite" class="input" value=${d} onChange=${(e) => {
+            // A new site starts fresh: its own preset tasks, no finished race from the old site on screen.
+            setDomain(e.target.value); setCustom(false); setTask("");
+            if (raceId) location.hash = "#/race";
+          }}>
           ${sites.map((s) => html`<option value=${s.domain}>${s.title}</option>`)}</select></div>
       <div><label class="field-label" for="rtask">Task</label>
         ${custom ? html`<input id="rtask" class="input" value=${task} onInput=${(e) => setTask(e.target.value)} />`

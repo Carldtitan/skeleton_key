@@ -447,9 +447,12 @@ async def validate_tasks(conn, base_url):
                     await b.settle()
                     text = await b.page.evaluate("() => (document.body.innerText || '').replace(/\\s+/g, ' ')")
                     pages.append(f"[{url}] {text[:5000]}")
-                verdict, _ = await llm.chat_json(JUDGE_MODEL, [{"role": "user", "content": VALIDATE_PROMPT.format(
-                    task=t["question"], truth=json.dumps(truth, default=str)[:8000], pages="\n\n".join(pages))}],
-                    max_tokens=6000)
+                try:
+                    verdict, _ = await llm.chat_json(JUDGE_MODEL, [{"role": "user", "content": VALIDATE_PROMPT.format(
+                        task=t["question"], truth=json.dumps(truth, default=str)[:8000], pages="\n\n".join(pages))}],
+                        max_tokens=6000)
+                except Exception as e:  # one unreadable verdict shouldn't sink the whole report
+                    verdict = {"passable": False, "why": f"validator failed: {type(e).__name__}: {str(e)[:120]}"}
                 report.append({"id": t["id"], "question": t["question"], **verdict})
     finally:
         for worker, sb_id, sub_id in sandboxes:
