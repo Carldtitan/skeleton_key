@@ -482,7 +482,8 @@ def race_status(race_id: str):
         u = usage.get(name, {})
         c["model_tokens"] = (u.get("prompt_tokens") or 0) + (u.get("completion_tokens") or 0)
         c["cost_usd"] = round(u.get("cost_usd") or 0, 6)
-    return {"task": job["hints"], "status": job["status"], "detail": job["status_detail"],
+    return {"task": job["hints"], "domain": site_domain(job["site_url"]), "status": job["status"],
+            "detail": job["status_detail"],
             "started": job["created"], "now": time.time(), "contestants": contestants, "result": result}
 
 

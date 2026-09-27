@@ -559,7 +559,7 @@ function Race({ raceId, overview }) {
       <button class="button primary large" disabled=${!d || !task}>Run</button>
     </form>
     ${raceId && html`<section class="section"><${RaceView} id=${raceId} frontier=${presets?.frontier} open=${presets?.open}
-        onTask=${(t) => t && t !== task && setTask(t)} /></section>`}
+        onTask=${(t, dom) => { if (dom && dom !== d) setDomain(dom); if (t && t !== task) setTask(t); }} /></section>`}
     ${overview && !sites.length && html`<div class="empty section">Connect a site first</div>`}`;
 }
 
@@ -567,7 +567,7 @@ function RaceView({ id, frontier, open, onTask }) {
   const [data] = usePoll(() => api(`/api/race/${id}`).then((d) => ({ ...d, receivedAt: Date.now() })), 1200, [id]);
   const [now, setNow] = useState(Date.now());
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 250); return () => clearInterval(t); }, []);
-  useEffect(() => { if (data?.task) onTask(data.task); }, [data?.task, id]);
+  useEffect(() => { if (data?.task) onTask(data.task, data.domain); }, [data?.task, id]);
   if (!data) return null;
   const results = data.result?.results || {};
   const lanes = LANES.filter(([k]) => !k.startsWith("frontier") || frontier || results[k] || data.contestants[k]);
