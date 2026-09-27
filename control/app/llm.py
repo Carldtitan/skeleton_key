@@ -95,28 +95,39 @@ def _to_anthropic(messages):
     return system, out
 
 
+def _anthropic_usage(model, u):
+    """Tokens and cost including prompt-cache writes (1.25x input price) and reads (0.1x)."""
+    from .config import ANTHROPIC_PRICES
+    p_in, p_out = ANTHROPIC_PRICES.get(model, (0.0, 0.0))
+    written = getattr(u, "cache_creation_input_tokens", 0) or 0
+    read = getattr(u, "cache_read_input_tokens", 0) or 0
+    prompt = u.input_tokens + written + read
+    cost = u.input_tokens * p_in + written * p_in * 1.25 + read * p_in * 0.1 + u.output_tokens * p_out
+    return prompt, u.output_tokens, cost, read
+
+
 async def chat_anthropic(model, messages, max_tokens=16000):
     """Frontier baseline for the race only. Returns (text, usage in OpenAI field names)."""
     import anthropic
 
-    from .config import ANTHROPIC_API_KEY, ANTHROPIC_PRICES
+    from .config import ANTHROPIC_API_KEY
     system, msgs = _to_anthropic(messages)
     started = time.monotonic()
     async with anthropic.AsyncAnthropic(api_key=ANTHROPIC_API_KEY) as client:
         response = await client.beta.messages.create(
             model=model, max_tokens=max_tokens, system=system, messages=msgs,
             thinking={"type": "adaptive"},
+            cache_control={"type": "ephemeral"},  # auto-cache the longest stable prefix
             betas=["server-side-fallback-2026-07-01"], fallbacks="default",
         )
     if response.stop_reason == "refusal":
         raise RuntimeError("frontier model declined the request")
     text = "".join(b.text for b in response.content if b.type == "text")
-    usage = {"prompt_tokens": response.usage.input_tokens, "completion_tokens": response.usage.output_tokens}
+    prompt, completion, cost, _ = _anthropic_usage(model, response.usage)
+    usage = {"prompt_tokens": prompt, "completion_tokens": completion}
     tag = meter.get()
     if tag:
-        p_in, p_out = ANTHROPIC_PRICES.get(model, (0.0, 0.0))
-        db.add_usage(tag[0], tag[1], model, usage["prompt_tokens"], usage["completion_tokens"],
-                     usage["prompt_tokens"] * p_in + usage["completion_tokens"] * p_out, time.monotonic() - started)
+        db.add_usage(tag[0], tag[1], model, prompt, completion, cost, time.monotonic() - started)
     return text, usage
 
 
@@ -125,20 +136,22 @@ async def chat_anthropic_tools(model, system, messages, tools, max_tokens=16000)
     response.content unchanged so thinking blocks are passed back as the API expects."""
     import anthropic
 
-    from .config import ANTHROPIC_API_KEY, ANTHROPIC_PRICES
+    from .config import ANTHROPIC_API_KEY
+    # Breakpoint on the last tool: tools + system are identical across tasks, so they are cached across runs;
+    # the top-level cache_control additionally caches the growing conversation turn to turn.
+    tools = [*tools[:-1], {**tools[-1], "cache_control": {"type": "ephemeral"}}] if tools else tools
     started = time.monotonic()
     async with anthropic.AsyncAnthropic(api_key=ANTHROPIC_API_KEY) as client:
         response = await client.beta.messages.create(
             model=model, max_tokens=max_tokens, system=system, messages=messages, tools=tools,
             thinking={"type": "adaptive"},
+            cache_control={"type": "ephemeral"},
             betas=["server-side-fallback-2026-07-01"], fallbacks="default",
         )
+    prompt, completion, cost, cached = _anthropic_usage(model, response.usage)
     tag = meter.get()
     if tag:
-        p_in, p_out = ANTHROPIC_PRICES.get(model, (0.0, 0.0))
-        u = response.usage
-        db.add_usage(tag[0], tag[1], model, u.input_tokens, u.output_tokens,
-                     u.input_tokens * p_in + u.output_tokens * p_out, time.monotonic() - started)
+        db.add_usage(tag[0], tag[1], model, prompt, completion, cost, time.monotonic() - started)
     return response
 
 
@@ -153,6 +166,15 @@ async def chat_tools(model, messages, tools, max_tokens=4000):
     data = r.json()
     await _record(model, data.get("usage", {}), time.monotonic() - started)
     return data["choices"][0]["message"]
+
+
+async def rerank(query, documents, top_n, model="bge-reranker-v2-m3"):
+    """Vultr's reranker: indices of the top_n documents most relevant to the query."""
+    async with httpx.AsyncClient(timeout=60) as client:
+        r = await client.post(f"{INFERENCE_URL}/rerank", headers={"Authorization": f"Bearer {INFERENCE_KEY}"},
+                              json={"model": model, "query": query, "documents": documents, "top_n": top_n})
+    r.raise_for_status()
+    return [x["index"] for x in r.json()["results"]]
 
 
 def parse_json(text):

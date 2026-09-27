@@ -17,6 +17,7 @@ Fairness rules, so a failure is the model's fault and not the harness's or the s
 """
 import asyncio
 import json
+import os
 import pathlib
 import secrets
 import time
@@ -31,8 +32,8 @@ MAX_BROWSER_STEPS = 20
 MAX_TOOL_TURNS = 8
 TASKS_DIR = pathlib.Path(__file__).with_name("bench_tasks")
 
+# System prompts are static (the task goes in the user message) so the prompt prefix can be cached.
 BROWSER_PROMPT = """You operate a web browser for the user, who is already logged in to {site}.
-Task: {task}
 Each step you get a screenshot, the numbered interactive elements, and the full text of the current page
 (including parts not on screen). Use them to complete the task. Reply with ONLY JSON:
 {{"thought": "<short>", "action": "click" | "type" | "scroll" | "navigate" | "back" | "answer",
@@ -40,8 +41,8 @@ Each step you get a screenshot, the numbered interactive elements, and the full 
   "answer": "<final answer for the user, only with action answer>"}}"""
 
 TOOL_PROMPT = """You help the user with their {site} account using the provided tools.
-Task: {task}
 Call tools as needed, then give a short final answer."""
+TOOL_TOP_K = int(os.environ.get("SK_TOOL_TOP_K", "6"))
 
 JUDGE_PROMPT = """You grade answers to a task about a website.
 
@@ -147,10 +148,11 @@ async def browser_contestant(race_id, name, chat, conn, task, site_root, sandbox
                 b.step = step
                 obs = await b.observe(include_text=True)
                 messages = [
-                    {"role": "system", "content": BROWSER_PROMPT.format(site=conn["domain"], task=task)},
+                    {"role": "system", "content": BROWSER_PROMPT.format(site=conn["domain"])},
                     {"role": "user", "content": [
                         {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{obs['screenshot_b64']}"}},
-                        {"type": "text", "text": f"Step {step}/{MAX_BROWSER_STEPS}. Page: {obs['title']} — {obs['url']}\n"
+                        {"type": "text", "text": f"Task: {task}\n\n"
+                                                 f"Step {step}/{MAX_BROWSER_STEPS}. Page: {obs['title']} — {obs['url']}\n"
                                                  f"Done so far: {'; '.join(history[-10:]) or 'nothing'}\n\n"
                                                  f"Page text:\n{obs['text']}\n\n"
                                                  f"Elements:\n{element_listing(obs['elements'])}"},
@@ -191,6 +193,22 @@ async def browser_contestant(race_id, name, chat, conn, task, site_root, sandbox
             "failure": failure, **summarize_usage(race_id, name)}
 
 
+async def select_tools(site, task, race_id, lane):
+    """Offer only the operations most relevant to the task (Vultr reranker), in the site's original order.
+    Both tool lanes use the same selection, so they are compared on equal terms."""
+    tools = tool_specs(site)
+    if len(tools) <= TOOL_TOP_K:
+        return tools
+    docs = [f"{t['function']['name']}: {t['function']['description']}" for t in tools]
+    try:
+        keep = set(await llm.rerank(task, docs, TOOL_TOP_K))
+    except Exception:
+        return tools  # reranker unavailable: fall back to every tool rather than guess
+    chosen = [t for i, t in enumerate(tools) if i in keep]
+    event(race_id, lane, "tools", offered=[t["function"]["name"] for t in chosen], of=len(tools))
+    return chosen
+
+
 def tool_specs(site):
     tools = []
     for op in site["spec"]["operations"]:
@@ -211,9 +229,10 @@ async def skeleton_key_contestant(race_id, conn, task, base_url):
     name = "skeleton_key"
     llm.meter.set((race_id, name))
     site = db.get_site(conn["domain"])
-    messages = [{"role": "system", "content": TOOL_PROMPT.format(site=conn["domain"], task=task)},
+    messages = [{"role": "system", "content": TOOL_PROMPT.format(site=conn["domain"])},
                 {"role": "user", "content": task}]
-    tools, answer, error, failure, calls_made = tool_specs(site), None, None, None, []
+    tools = await select_tools(site, task, race_id, name)
+    answer, error, failure, calls_made = None, None, None, []
     started, turns, retried = time.monotonic(), 0, False
     try:
         while turns < MAX_TOOL_TURNS:
@@ -253,8 +272,8 @@ async def frontier_skeleton_key_contestant(race_id, conn, task, base_url):
     llm.meter.set((race_id, name))
     site = db.get_site(conn["domain"])
     tools = [{"name": t["function"]["name"], "description": t["function"]["description"],
-              "input_schema": t["function"]["parameters"]} for t in tool_specs(site)]
-    system = TOOL_PROMPT.format(site=conn["domain"], task=task)
+              "input_schema": t["function"]["parameters"]} for t in await select_tools(site, task, race_id, name)]
+    system = TOOL_PROMPT.format(site=conn["domain"])
     messages = [{"role": "user", "content": task}]
     answer, error, failure, calls_made = None, None, None, []
     started, turns, retried = time.monotonic(), 0, False
