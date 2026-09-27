@@ -199,18 +199,34 @@ async def browser_contestant(race_id, name, chat, conn, task, site_root, sandbox
             "failure": failure, **summarize_usage(race_id, name)}
 
 
-async def select_tools(site, task, race_id, lane):
-    """Offer only the operations most relevant to the task (Vultr reranker), in the site's original order.
-    Both tool lanes use the same selection, so they are compared on equal terms."""
+SELECT_PROMPT = """You will answer a task about the user's {site} account using API operations.
+Pick the operations you will need from this catalog (name, effect, summary):
+{catalog}
+
+Task: {task}
+Pick at most {k}. Use read operations when the task only asks for information.
+Reply with ONLY JSON: {{"tools": ["<name>", ...]}}"""
+
+
+def catalog(site):
+    return "\n".join(f"- {o['name']} ({'read' if o['spec'].get('side_effect') == 'read' else 'write'}): "
+                     f"{o['spec'].get('summary') or ''}" for o in site["spec"]["operations"])
+
+
+async def select_tools(site, task, race_id, lane, pick):
+    """The lane's own model picks its operations from a one-line-per-operation catalog; only those get full
+    definitions. `pick(prompt) -> text` calls that lane's model, so a wrong pick is that model's mistake."""
     tools = tool_specs(site)
     if len(tools) <= TOOL_TOP_K:
         return tools
-    docs = [f"{t['function']['name']}: {t['function']['description']}" for t in tools]
     try:
-        keep = set(await llm.rerank(task, docs, TOOL_TOP_K))
+        text = await pick(SELECT_PROMPT.format(site=site["domain"], catalog=catalog(site), task=task, k=TOOL_TOP_K))
+        wanted = {str(n) for n in llm.parse_json(text).get("tools", [])}
     except Exception:
-        return tools  # reranker unavailable: fall back to every tool rather than guess
-    chosen = [t for i, t in enumerate(tools) if i in keep]
+        wanted = set()
+    chosen = [t for t in tools if t["function"]["name"] in wanted][:TOOL_TOP_K]
+    if not chosen:
+        chosen = tools  # unusable pick: offer everything rather than guess
     event(race_id, lane, "tools", offered=[t["function"]["name"] for t in chosen], of=len(tools))
     return chosen
 
@@ -237,7 +253,9 @@ async def skeleton_key_contestant(race_id, conn, task, base_url):
     site = db.get_site(conn["domain"])
     messages = [{"role": "system", "content": TOOL_PROMPT.format(site=conn["domain"])},
                 {"role": "user", "content": task}]
-    tools = await select_tools(site, task, race_id, name)
+    async def pick(prompt):
+        return (await llm.chat(TOOL_AGENT_MODEL, [{"role": "user", "content": prompt}], max_tokens=4000))[0]
+    tools = await select_tools(site, task, race_id, name, pick)
     answer, error, failure, calls_made = None, None, None, []
     started, turns, retried = time.monotonic(), 0, False
     try:
@@ -277,8 +295,13 @@ async def frontier_skeleton_key_contestant(race_id, conn, task, base_url):
     name = "frontier_skeleton_key"
     llm.meter.set((race_id, name))
     site = db.get_site(conn["domain"])
+
+    async def pick(prompt):
+        return (await llm.chat_anthropic(FRONTIER_MODEL, [{"role": "user", "content": prompt}]))[0]
+
     tools = [{"name": t["function"]["name"], "description": t["function"]["description"],
-              "input_schema": t["function"]["parameters"]} for t in await select_tools(site, task, race_id, name)]
+              "input_schema": t["function"]["parameters"]}
+             for t in await select_tools(site, task, race_id, name, pick)]
     system = TOOL_PROMPT.format(site=conn["domain"])
     messages = [{"role": "user", "content": task}]
     answer, error, failure, calls_made = None, None, None, []
