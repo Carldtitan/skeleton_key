@@ -339,3 +339,4 @@ pre.code { margin: 0; padding: 14px 16px; border-radius: var(--radius-md); backg
 .tag.curated { background: #efe0d4; color: var(--terracotta-dark); }
 .tag.auto { background: #e4ece6; color: #2f674c; }
 a.signout { display: grid; place-items: center; }
+.lesson-part pre.code { white-space: pre-wrap; overflow-wrap: anywhere; }

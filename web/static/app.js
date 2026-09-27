@@ -251,7 +251,7 @@ function LessonCard({ l, n, admin, onChange }) {
     <div class="lesson-body">
       <div class="row"><span class="mono muted">${l.site} · ${l.date}</span><span class="spacer"></span>
         <span class="tag ${l.source}">${l.source}</span>
-        <${Status} state=${l.status === "approved" ? "done" : l.status === "rejected" ? "blocked" : "queued"} label=${l.status} /></div>
+        <${Status} state=${l.status === "approved" ? "published" : l.status === "rejected" ? "failed" : "stopped"} label=${l.status} /></div>
       <p class="lesson-text">${l.lesson}</p>
       ${(l.failure || l.fix) && html`<details><summary>The mistake</summary>
         ${l.failure && html`<div class="lesson-part"><span class="eyebrow">What went wrong</span><p>${l.failure}</p></div>`}
