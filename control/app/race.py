@@ -379,8 +379,15 @@ async def run_race(race_id, conn, task, base_url):
             runs["frontier_skeleton_key"] = frontier_skeleton_key_contestant(race_id, conn, task, base_url)
         runs["open_browser"] = browser_contestant(race_id, "open_browser", vultr_chat, conn, task, root, sandboxes)
         runs["skeleton_key"] = skeleton_key_contestant(race_id, conn, task, base_url)
+        async def finish(name, run):
+            # Report each lane as soon as it ends, so the UI can freeze its clock before the slowest lane is done.
+            r = await run
+            event(race_id, name, "done", **{k: r.get(k) for k in ("seconds", "answer", "error", "model_tokens",
+                                                                   "cost_usd")})
+            return r
+
         names = list(runs)
-        results = dict(zip(names, await asyncio.gather(*runs.values())))
+        results = dict(zip(names, await asyncio.gather(*(finish(n, r) for n, r in runs.items()))))
         grades = await judge(race_id, task, truth, results) if truth else {}
         models = {"frontier_browser": FRONTIER_MODEL, "frontier_skeleton_key": FRONTIER_MODEL,
                   "open_browser": BROWSE_MODEL, "skeleton_key": TOOL_AGENT_MODEL}

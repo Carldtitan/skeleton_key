@@ -519,17 +519,17 @@ function RaceView({ id, frontier, open, onTask }) {
     <div class="lanes" style=${`--lanes:${lanes.length}`}>
       ${lanes.map(([k, kind]) => {
         const c = data.contestants[k] || { steps: [] };
-        const r = results[k];
+        const r = results[k] || (c.done && { ...c.done, correct: undefined, pending: true });
         const model = r?.model || (k.startsWith("frontier") ? frontier : open);
         const live = !r && c.live_url && data.status === "racing";
-        const verdict = r ? (r.correct === true ? ["good", "✓"] : r.correct === false ? ["bad", "✗"] : ["", "?"]) : ["", "…"];
+        const verdict = r && !r.pending ? (r.correct === true ? ["good", "✓"] : r.correct === false ? ["bad", "✗"] : ["", "?"]) : ["", "…"];
         return html`<div class="lane ${kind === "Skeleton Key" ? "ours" : ""}">
           <h3>${shortModel(model)} · ${kind}</h3>
           ${live ? html`<${Frame} url=${c.live_url} />`
             : html`<div class="log">${c.steps.map((s) => html`<div>${s.step}. ${s.action}${s.thought
                 ? html` <span class="res">${s.thought}</span>` : ""}</div>`)}</div>`}
           <dl class="metrics">
-            <div class="metric"><dt>Time</dt><dd>${r ? fmtS(r.seconds) : data.status === "racing" ? fmtS(elapsed) : "–"}</dd></div>
+            <div class="metric"><dt>Time</dt><dd>${r?.seconds != null ? fmtS(r.seconds) : data.status === "racing" ? fmtS(elapsed) : "–"}</dd></div>
             <div class="metric"><dt>Tokens</dt><dd>${fmtN(r?.model_tokens ?? c.model_tokens)}</dd></div>
             <div class="metric"><dt>Cost</dt><dd>${fmtUsd(r?.cost_usd ?? c.cost_usd)}</dd></div>
             <div class="metric"><dt>Correct</dt><dd class=${verdict[0]}>${verdict[1]}</dd></div>

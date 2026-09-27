@@ -387,6 +387,8 @@ def race_status(race_id: str):
         c = contestants.setdefault(name, {"steps": []})
         if e["kind"] == "race_sandbox":
             c["live_url"] = live_url(db.get_job(d["job_id"]))
+        elif e["kind"] == "race_done":
+            c["done"] = {k: d.get(k) for k in ("seconds", "answer", "error", "model_tokens", "cost_usd")}
         elif e["kind"] == "race_step":
             c["steps"].append({"step": d.get("step"), "action": d.get("action"), "thought": d.get("thought")})
     usage = db.usage_summary(race_id)
