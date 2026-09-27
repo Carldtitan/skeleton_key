@@ -35,8 +35,11 @@ TASKS_DIR = pathlib.Path(__file__).with_name("bench_tasks")
 # System prompts are static (the task goes in the user message) so the prompt prefix can be cached.
 BROWSER_PROMPT = """You operate a web browser for the user, who is already logged in to {site}.
 Each step you get a screenshot, the numbered interactive elements, and the full text of the current page
-(including parts not on screen). Use them to complete the task. Reply with ONLY JSON:
-{{"thought": "<short>", "action": "click" | "type" | "scroll" | "navigate" | "back" | "answer",
+(including parts not on screen), plus your own notes and the steps so far. Use them to complete the task.
+Keep "notes" up to date with every fact you have found that the task needs (you will not see earlier pages
+again). Reply with ONLY JSON:
+{{"thought": "<short>", "notes": "<all facts gathered so far>",
+  "action": "click" | "type" | "scroll" | "navigate" | "back" | "answer",
   "element": <id>, "text": "<text to type>", "submit": <bool>, "url": "<url>", "direction": "down" | "up",
   "answer": "<final answer for the user, only with action answer>"}}"""
 
@@ -142,7 +145,7 @@ async def browser_contestant(race_id, name, chat, conn, task, site_root, sandbox
             await add_cookies(b, conn)
             await b.page.goto(site_root, wait_until="domcontentloaded")
             started = time.monotonic()  # time the agent, not the sandbox boot
-            history, actions = [], []
+            history, actions, notes = [], [], ""  # notes: the agent's own memory, carried to every later step
             for step in range(1, MAX_BROWSER_STEPS + 1):
                 steps = step
                 b.step = step
@@ -153,7 +156,8 @@ async def browser_contestant(race_id, name, chat, conn, task, site_root, sandbox
                         {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{obs['screenshot_b64']}"}},
                         {"type": "text", "text": f"Task: {task}\n\n"
                                                  f"Step {step}/{MAX_BROWSER_STEPS}. Page: {obs['title']} — {obs['url']}\n"
-                                                 f"Done so far: {'; '.join(history[-10:]) or 'nothing'}\n\n"
+                                                 f"Your notes: {notes or '(none yet)'}\n"
+                                                 f"Steps so far:\n{chr(10).join(history) or 'none'}\n\n"
                                                  f"Page text:\n{obs['text']}\n\n"
                                                  f"Elements:\n{element_listing(obs['elements'])}"},
                     ]},
@@ -171,6 +175,8 @@ async def browser_contestant(race_id, name, chat, conn, task, site_root, sandbox
                     failure, error = "format_error", "no parseable action after a retry"
                     break
                 event(race_id, name, "step", step=step, action=act.get("action"), thought=act.get("thought"))
+                if act.get("notes"):
+                    notes = str(act["notes"])[:2000]
                 if act.get("action") == "answer":
                     answer = act.get("answer")
                     break
@@ -179,12 +185,12 @@ async def browser_contestant(race_id, name, chat, conn, task, site_root, sandbox
                     await b.settle()
                     label = f"{act.get('action')} {act.get('element') or act.get('direction') or act.get('url') or ''}".strip()
                     actions.append(label)
-                    history.append(f"{label}: {note or 'ok'}")
+                    history.append(f"{step}. {label}: {note or 'ok'} ({act.get('thought') or ''})")
                     if oscillating(actions):
                         history.append("note: you keep scrolling back and forth; the page text above already "
                                        "contains the whole page")
                 except Exception as e:
-                    history.append(f"{act.get('action')} failed: {str(e).splitlines()[0][:80]}")
+                    history.append(f"{step}. {act.get('action')} failed: {str(e).splitlines()[0][:80]}")
             else:
                 failure = "step_limit"
     except Exception as e:
