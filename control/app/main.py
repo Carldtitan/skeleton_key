@@ -387,6 +387,8 @@ def race_status(race_id: str):
         c = contestants.setdefault(name, {"steps": []})
         if e["kind"] == "race_sandbox":
             c["live_url"] = live_url(db.get_job(d["job_id"]))
+        elif e["kind"] == "race_start":
+            c["start"] = e["ts"]
         elif e["kind"] == "race_done":
             c["done"] = {k: d.get(k) for k in ("seconds", "answer", "error", "model_tokens", "cost_usd")}
         elif e["kind"] == "race_step":
@@ -397,7 +399,7 @@ def race_status(race_id: str):
         c["model_tokens"] = (u.get("prompt_tokens") or 0) + (u.get("completion_tokens") or 0)
         c["cost_usd"] = round(u.get("cost_usd") or 0, 6)
     return {"task": job["hints"], "status": job["status"], "detail": job["status_detail"],
-            "started": job["created"], "contestants": contestants, "result": result}
+            "started": job["created"], "now": time.time(), "contestants": contestants, "result": result}
 
 
 # --- Public: docs, download, REST gateway --------------------------------------------------------

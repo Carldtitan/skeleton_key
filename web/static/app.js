@@ -507,14 +507,15 @@ function Race({ raceId, overview }) {
 }
 
 function RaceView({ id, frontier, open, onTask }) {
-  const [data] = usePoll(() => api(`/api/race/${id}`), 1200, [id]);
+  const [data] = usePoll(() => api(`/api/race/${id}`).then((d) => ({ ...d, receivedAt: Date.now() })), 1200, [id]);
   const [now, setNow] = useState(Date.now());
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 250); return () => clearInterval(t); }, []);
   useEffect(() => { if (data?.task) onTask(data.task); }, [data?.task, id]);
   if (!data) return null;
   const results = data.result?.results || {};
   const lanes = LANES.filter(([k]) => !k.startsWith("frontier") || frontier || results[k] || data.contestants[k]);
-  const elapsed = now / 1000 - data.started;
+  // Server clock at this moment: the browser's clock may be off, so offset it by the last poll's server time.
+  const serverNow = data.now + (now - data.receivedAt) / 1000;
   return html`
     <div class="lanes" style=${`--lanes:${lanes.length}`}>
       ${lanes.map(([k, kind]) => {
@@ -529,7 +530,9 @@ function RaceView({ id, frontier, open, onTask }) {
             : html`<div class="log">${c.steps.map((s) => html`<div>${s.step}. ${s.action}${s.thought
                 ? html` <span class="res">${s.thought}</span>` : ""}</div>`)}</div>`}
           <dl class="metrics">
-            <div class="metric"><dt>Time</dt><dd>${r?.seconds != null ? fmtS(r.seconds) : data.status === "racing" ? fmtS(elapsed) : "–"}</dd></div>
+            <div class="metric"><dt>Time</dt><dd>${r?.seconds != null ? fmtS(r.seconds)
+              : data.status === "racing" && c.start ? fmtS(Math.max(0, serverNow - c.start))
+              : data.status === "racing" ? html`<span class="muted">starting</span>` : "–"}</dd></div>
             <div class="metric"><dt>Tokens</dt><dd>${fmtN(r?.model_tokens ?? c.model_tokens)}</dd></div>
             <div class="metric"><dt>Cost</dt><dd>${fmtUsd(r?.cost_usd ?? c.cost_usd)}</dd></div>
             <div class="metric"><dt>Correct</dt><dd class=${verdict[0]}>${verdict[1]}</dd></div>

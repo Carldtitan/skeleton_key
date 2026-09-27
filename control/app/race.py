@@ -145,6 +145,7 @@ async def browser_contestant(race_id, name, chat, conn, task, site_root, sandbox
             await add_cookies(b, conn)
             await b.page.goto(site_root, wait_until="domcontentloaded")
             started = time.monotonic()  # time the agent, not the sandbox boot
+            event(race_id, name, "start")
             history, actions, notes = [], [], ""  # notes: the agent's own memory, carried to every later step
             for step in range(1, MAX_BROWSER_STEPS + 1):
                 steps = step
@@ -255,9 +256,12 @@ async def skeleton_key_contestant(race_id, conn, task, base_url):
                 {"role": "user", "content": task}]
     async def pick(prompt):
         return (await llm.chat(TOOL_AGENT_MODEL, [{"role": "user", "content": prompt}], max_tokens=4000))[0]
+    # Picking tools is the agent's own work (a model call), so it counts toward its time.
+    started = time.monotonic()
+    event(race_id, name, "start")
     tools = await select_tools(site, task, race_id, name, pick)
     answer, error, failure, calls_made = None, None, None, []
-    started, turns, retried = time.monotonic(), 0, False
+    turns, retried = 0, False
     try:
         while turns < MAX_TOOL_TURNS:
             turns += 1
@@ -299,13 +303,15 @@ async def frontier_skeleton_key_contestant(race_id, conn, task, base_url):
     async def pick(prompt):
         return (await llm.chat_anthropic(FRONTIER_MODEL, [{"role": "user", "content": prompt}]))[0]
 
+    started = time.monotonic()  # includes picking tools, like the open-model lane
+    event(race_id, name, "start")
     tools = [{"name": t["function"]["name"], "description": t["function"]["description"],
               "input_schema": t["function"]["parameters"]}
              for t in await select_tools(site, task, race_id, name, pick)]
     system = TOOL_PROMPT.format(site=conn["domain"])
     messages = [{"role": "user", "content": task}]
     answer, error, failure, calls_made = None, None, None, []
-    started, turns, retried = time.monotonic(), 0, False
+    turns, retried = 0, False
     try:
         while turns < MAX_TOOL_TURNS:
             turns += 1
