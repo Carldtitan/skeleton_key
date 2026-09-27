@@ -10,6 +10,7 @@ import os
 import pathlib
 import re
 import time
+from collections import Counter
 
 import boto3
 
@@ -30,7 +31,7 @@ Rules:
 - The same concept must use the same parameter name everywhere (e.g. always `category_api_id`, never both
   `discover_category_api_id` and `category_api_id`).
 - Operation names: snake_case verb_noun; keep them if already fine.
-- Drop an operation only if another one does exactly the same thing.
+- Every operation name must be unique. Drop an operation only if another one does exactly the same thing.
 Reply with ONLY JSON:
 {{"rename_ops": {{"old_name": "new_name"}}, "rename_params": {{"op_name": {{"old_param": "new_param"}}}},
   "drop": ["op_name"], "notes": "<one line>"}}
@@ -44,6 +45,28 @@ category names are fine.
 {doc}
 
 Reply with ONLY JSON: {{"personal": ["<exact string as it appears>", ...]}}"""
+
+
+def _preference(o):
+    """Which of two same-named operations to keep: verified first, then the site's real API over page-data
+    scrapes (Next.js /_next/data), then the one that needs fewer required parameters."""
+    required = sum(1 for p in o["spec"].get("params", []) if p.get("required"))
+    return (o["status"] == "verified", "/_next/data/" not in o["endpoint"], -required)
+
+
+def unique_names(ops):
+    """Operation names must be unique (MCP tool names, REST paths, OpenAPI operationIds). When several
+    operations share a name they do the same thing, so keep the best one. Returns (ops, {kept: [dropped]})."""
+    groups = {}
+    for o in ops:
+        groups.setdefault(o["name"], []).append(o)
+    kept, merged = [], {}
+    for name, group in groups.items():
+        best = max(group, key=_preference)
+        kept.append(best)
+        if len(group) > 1:
+            merged[name] = [g["endpoint"] for g in group if g is not best]
+    return kept, merged
 
 
 class RenameArgs(ast.NodeTransformer):
@@ -243,7 +266,12 @@ async def publish(job_id, base_url):
                 continue
         o.update(candidate)
         renamed_ops.append(o["name"])
-    ops = [o for o in ops if o["name"] not in drop]
+    # A dropped name shared by several operations means "one of these is redundant", not "drop them all".
+    names = Counter(o["name"] for o in ops)
+    ops = [o for o in ops if o["name"] not in drop or names[o["name"]] > 1]
+    ops, merged = unique_names(ops)
+    if merged:
+        db.add_event(job_id, "duplicates_merged", {"kept_over": merged})
     for o in ops:  # keep undo references pointing at the new names
         u = o["spec"].get("undo")
         o["spec"]["undo"] = module_name((plan.get("rename_ops") or {}).get(u, u)) if u else None

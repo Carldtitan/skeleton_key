@@ -362,6 +362,9 @@ function Site({ domain }) {
         ${probe && html`<span class="k">Try</span><${Copy}
           text=${`curl -X POST ${site.rest_base}/${probe.name} -H "Authorization: Bearer ${conn.api_key}" -d '{}'`}
           shown=${`curl -X POST ${site.rest_base}/${probe.name} -H "Authorization: Bearer ${mask(conn.api_key)}" -d '{}'`} />`}
+        ${probe && html`<span class="k">PowerShell</span><${Copy}
+          text=${`Invoke-RestMethod -Method Post -Uri ${site.rest_base}/${probe.name} -Headers @{Authorization="Bearer ${conn.api_key}"} -ContentType "application/json" -Body '{}'`}
+          shown=${`Invoke-RestMethod -Method Post -Uri ${site.rest_base}/${probe.name} -Headers @{Authorization="Bearer ${mask(conn.api_key)}"} -ContentType "application/json" -Body '{}'`} />`}
       </div>`}
       ${tab === "code" && html`<div class="row" style="margin-top:14px">
         <a class="button primary" href=${site.download_url}>Download</a>
