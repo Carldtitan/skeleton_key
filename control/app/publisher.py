@@ -331,11 +331,18 @@ async def publish(job_id, base_url):
     return summary
 
 
-async def relink_sources(domain, base_url):
+async def relink_sources(domain, base_url, use_model=True):
     """Add id-source links to an already published site without regenerating or renaming anything."""
+    from .sources import by_field_name
     site = db.get_site(domain)
     ops = site["spec"]["operations"]
-    found = await find_sources(domain, ops)
+    if use_model:
+        found = await find_sources(domain, ops)
+    else:
+        found = {}
+        for key, v in by_field_name(ops).items():
+            op, _, param = key.partition(".")
+            found.setdefault(op, {})[param] = v
     apply_sources(ops, found)
     public = [{**o, "code": o.get("public_code") or o["code"]} for o in ops]
     spec = openapi(domain, site["title"], public, base_url)

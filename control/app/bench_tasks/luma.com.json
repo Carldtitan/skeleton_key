@@ -82,7 +82,8 @@
   ],
   "ui": [
    "https://luma.com/home"
-  ]
+  ],
+  "personal": true
  },
  {
   "id": "calendars_followed",
@@ -96,7 +97,8 @@
   ],
   "ui": [
    "https://luma.com/home/calendars"
-  ]
+  ],
+  "personal": true
  },
  {
   "id": "most_subscribed_of_five",
@@ -206,7 +208,8 @@
   ],
   "ui": [
    "https://luma.com/settings"
-  ]
+  ],
+  "personal": true
  },
  {
   "id": "categories_under_600",

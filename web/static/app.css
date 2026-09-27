@@ -340,3 +340,11 @@ pre.code { margin: 0; padding: 14px 16px; border-radius: var(--radius-md); backg
 .tag.auto { background: #e4ece6; color: #2f674c; }
 a.signout { display: grid; place-items: center; }
 .lesson-part pre.code { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* guest / admin choice on the sign-in page */
+.gate-choices { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; margin-top: 36px; }
+.linkish { margin-top: 18px; padding: 0; border: 0; background: none; color: var(--text-muted); font: inherit;
+  font-size: 14px; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.linkish:hover { color: var(--text); }
+.sidebar-bottom { display: grid; gap: 8px; }
+.sidebar-bottom .muted { color: rgba(255, 246, 237, .6); font-size: 12px; letter-spacing: .04em; text-transform: uppercase; }

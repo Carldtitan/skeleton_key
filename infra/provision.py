@@ -34,6 +34,7 @@ BROWSER_IMAGE, RUNNER_IMAGE = "sk-browser", "sk-runner"
 INSTANCES = {
     "sk-control": {"plan": "vc2-2c-4gb", "firewall": "sk-control-fw", "role": "control"},
     "sk-worker-1": {"plan": "vhp-4c-8gb-intel", "firewall": "sk-worker-fw", "role": "worker"},
+    "sk-worker-2": {"plan": "vhp-4c-8gb-intel", "firewall": "sk-worker-fw", "role": "worker"},
 }
 FIREWALLS = {
     # Public-interface rules only; VPC traffic is filtered by ufw on each host.

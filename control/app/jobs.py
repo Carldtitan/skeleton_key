@@ -6,7 +6,7 @@ connect:  sandbox -> human login -> store the session on a (new or existing) con
 import asyncio
 import secrets
 
-from . import db, gateway, llm, publisher, workers
+from . import db, gateway, guests, llm, publisher, workers
 from .config import EXPLORE_MAX_STEPS, PUBLIC_URL
 from .endpoints import site_domain
 from .explorer import explore
@@ -127,14 +127,16 @@ async def run_connect(job_id):
             cookies = await b.cookies()
         domain = site_domain(job["site_url"])
         previous = db.get_connection(job["connection_id"]) if job["connection_id"] else None
+        owner = job.get("owner")
+        expires = guests.connection_expiry(owner) if owner else None
         if previous:
             conn_id = previous["id"]
             # A reconnect may be a different account: drop the old account's token and cached identity.
             db.update_connection(conn_id, cookies=cookies, status="active", job_id=job_id,
-                                 auth_headers={}, storage_state=None, identity=None)
+                                 auth_headers={}, storage_state=None, identity=None, expires=expires)
             db.add_event(job_id, "connection_refreshed", {"connection_id": conn_id})
         else:
-            conn_id, key = gateway.new_connection(domain, cookies, job_id)
+            conn_id, key = gateway.new_connection(domain, cookies, job_id, owner, expires)
             db.add_event(job_id, "connection_created", {"connection_id": conn_id, "api_key": key,
                                                         "mcp_url": f"{PUBLIC_URL}/mcp/{key}"})
         await capture_session_auth(db.get_job(job_id), conn_id)
@@ -178,13 +180,15 @@ def start_job(site_url, hints):
     return job_id
 
 
-def start_connect(domain, connection_id=None):
+def start_connect(domain, connection_id=None, owner=None):
     site = db.get_site(domain)
     if not site:
         raise ValueError(f"no published API for {domain}")
     job_id = "conn_job_" + secrets.token_hex(5)
     db.create_job(job_id, site["spec"]["login_url"], None, view_token=secrets.token_urlsafe(24), kind="connect",
                   connection_id=connection_id)
+    if owner:
+        db.update_job(job_id, owner=owner)
     tasks[job_id] = asyncio.create_task(run_connect(job_id))
     return job_id
 

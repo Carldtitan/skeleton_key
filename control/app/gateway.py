@@ -25,12 +25,12 @@ def hash_key(key):
     return hashlib.sha256(key.encode()).hexdigest()
 
 
-def new_connection(domain, cookies, job_id):
-    """Create a connection and return (connection_id, api_key). The key is only ever shown once."""
+def new_connection(domain, cookies, job_id, owner=None, expires=None):
+    """Create a connection and return (connection_id, api_key). owner/expires are set for guest connections."""
     conn_id = "conn_" + secrets.token_hex(6)
     key = "sk_" + secrets.token_urlsafe(24)
     db.save_connection(conn_id, domain, hash_key(key), cookies, job_id)
-    db.update_connection(conn_id, api_key=key)
+    db.update_connection(conn_id, api_key=key, owner=owner, expires=expires)
     return conn_id, key
 
 
@@ -38,6 +38,8 @@ def connection_for_key(key):
     conn = db.connection_by_key_hash(hash_key(key or ""))
     if not conn:
         raise GatewayError("unauthorized", "unknown API key", 401)
+    if conn["status"] == "ended" or (conn.get("expires") and conn["expires"] < time.time()):
+        raise GatewayError("unauthorized", "this guest connection has ended; connect again on the site page", 401)
     return conn
 
 

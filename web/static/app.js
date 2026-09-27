@@ -57,6 +57,10 @@ const fmtN = (n) => (n == null ? "–" : n.toLocaleString());
 const mask = (key) => (key ? key.slice(0, 7) + "…" : "");
 const plain = (t) => (t || "").replace(/\*\*|__|`/g, "");
 const clock = (secs) => `${String(Math.floor(secs / 60)).padStart(2, "0")}:${String(Math.floor(secs % 60)).padStart(2, "0")}`;
+const left = (ts) => {
+  const m = Math.max(0, Math.round((ts - Date.now() / 1000) / 60));
+  return m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m}m`;
+};
 const ago = (ts) => {
   if (!ts) return "–";
   const m = Math.round((Date.now() / 1000 - ts) / 60);
@@ -153,22 +157,39 @@ function GateArt() {
 function Login({ query }) {
   const [pw, setPw] = useState("");
   const [err, setErr] = useState(null);
+  const [adminForm, setAdminForm] = useState(query.get("admin") === "1");
+  const [seats] = usePoll(() => api("/api/guest"), 10000, []);
+  const next = () => { location.hash = "#" + (query.get("next") || "/"); };
   const submit = async (e) => {
     e.preventDefault();
-    try { await api("/api/login", { method: "POST", body: { password: pw } }); location.hash = "#" + (query.get("next") || "/"); }
+    try { await api("/api/login", { method: "POST", body: { password: pw } }); next(); }
     catch (x) { setErr("Wrong password"); }
   };
+  const guest = async () => {
+    setErr(null);
+    try { await api("/api/guest", { method: "POST" }); next(); }
+    catch (x) { setErr(x.message); }
+  };
+  const full = seats && seats.used >= seats.max;
   return html`<div class="gate">
     <div class="gate-brand"><span class="brand-mark"><${KeyIcon} /></span>Skeleton Key</div>
     <div class="gate-main">
       <div>
         <h1>Any web app.<br /><em>Now an API.</em></h1>
-        <form onSubmit=${submit}>
-          <label class="vh" for="pw">Password</label>
-          <input id="pw" class="input large" type="password" placeholder="Password" autofocus value=${pw}
-            onInput=${(e) => setPw(e.target.value)} />
-          <button class="button dark large">Enter</button>
-        </form>
+        ${adminForm
+          ? html`<form onSubmit=${submit}>
+              <label class="vh" for="pw">Admin password</label>
+              <input id="pw" class="input large" type="password" placeholder="Admin password" autofocus value=${pw}
+                onInput=${(e) => setPw(e.target.value)} />
+              <button class="button dark large">Enter</button>
+            </form>
+            <button class="linkish" onClick=${() => { setAdminForm(false); setErr(null); }}>← Continue as guest instead</button>`
+          : html`<div class="gate-choices">
+              <button class="button primary large" onClick=${guest} disabled=${full}>Continue as guest</button>
+              <span class="muted">${seats ? (full ? "All guest seats are taken. Try again later."
+                : `${seats.max - seats.used} of ${seats.max} guest seats free`) : ""}</span>
+            </div>
+            <button class="linkish" onClick=${() => { setAdminForm(true); setErr(null); }}>Admin sign in</button>`}
         ${err && html`<div class="error">${err}</div>`}
       </div>
       <${GateArt} />
@@ -179,6 +200,7 @@ function Login({ query }) {
 /* ---------- home ---------- */
 
 function Home({ overview }) {
+  const admin = overview?.role === "admin";
   const [url, setUrl] = useState("");
   const [busy, setBusy] = useState(false);
   const start = async (e) => {
@@ -189,9 +211,24 @@ function Home({ overview }) {
     finally { setBusy(false); }
   };
   const sites = overview?.sites || [], running = overview?.running || [];
+  if (overview && !admin) return html`
+    <${PageHeader} eyebrow="Home" title="Skeleton Key"
+        lede="Web apps without an API, turned into tested operations your agent can call.">
+      <${Help}><ol><li>Open a site and press Connect.</li><li>Log in with your own account, then press Done.</li>
+        <li>Copy the MCP URL into your agent.</li></ol><p>Guest connections last 6 hours.</p><//>
+    <//>
+    <section class="section">
+      <${SectionHeading} title="Apps" count=${sites.length} />
+      <div class="sites">
+        ${sites.map((s) => html`<a class="site-card" href=${`#/site/${s.domain}`}>
+          <span class="title">${s.title}</span><span class="domain">${s.domain}</span>
+          <span class="foot"><span class="n">${s.operations} operations</span><${Status} state=${s.connection || "none"} /></span></a>`)}
+      </div>
+    </section>`;
   return html`
     <${PageHeader} eyebrow="Home" title="Generator"
         lede="Point it at a web app, log in once, get a tested API your agents can use.">
+      ${overview?.guests && html`<span class="muted">Guests ${overview.guests.used} / ${overview.guests.max}</span>`}
       <${Help}><ol><li>Paste the web app's address.</li><li>Press Generate.</li>
         <li>Log in when the browser asks, then press Done.</li></ol><//>
     <//>
@@ -330,6 +367,8 @@ function Site({ domain }) {
   const writes = site.operations.filter((o) => o.side_effect !== "read");
   const verified = site.operations.filter((o) => o.status === "verified").length;
   const startConnect = async () => setConnectJob((await api(`/api/sites/${domain}/connect`, { method: "POST" })).job_id);
+  const guest = site.role === "guest";
+  const disconnect = async () => { await api(`/api/sites/${domain}/disconnect`, { method: "POST" }); refresh(); };
   const lines = {
     claude: [`claude mcp add --transport http ${name} ${mcp}`, `claude mcp add --transport http ${name} ${shownMcp}`],
     codex: [`codex mcp add ${name} --url ${mcp}`, `codex mcp add ${name} --url ${shownMcp}`],
@@ -338,14 +377,18 @@ function Site({ domain }) {
     <a class="back" href="#/sites">← All sites</a>
     <${PageHeader} eyebrow=${domain} title=${site.title}>
       <${Status} state=${connectJob ? "busy" : conn?.status || "none"} />
-      ${!connectJob && html`<button class="button secondary" onClick=${startConnect}>${conn ? "Reconnect" : "Connect"}</button>`}
+      ${guest && conn?.expires && !connectJob && html`<span class="muted">ends in ${left(conn.expires)}</span>`}
+      ${!connectJob && html`<button class=${`button ${guest && !conn ? "primary" : "secondary"}`} onClick=${startConnect}>
+        ${conn ? "Reconnect" : guest ? `Connect your ${site.title} account` : "Connect"}</button>`}
+      ${guest && conn && !connectJob && html`<button class="button secondary" onClick=${disconnect}>Disconnect</button>`}
     <//>
     <dl class="summary">
       <div><dt>Operations</dt><dd>${site.operations.length}</dd></div>
       <div><dt>Verified</dt><dd>${verified}</dd></div>
       <div><dt>Read</dt><dd>${reads.length}</dd></div>
       <div><dt>Write</dt><dd>${writes.length}</dd></div>
-      <div><dt>Session checked</dt><dd>${ago(conn?.checked)}</dd></div>
+      ${guest ? html`<div><dt>Connection</dt><dd>${conn?.expires ? `${left(conn.expires)} left` : "–"}</dd></div>`
+        : html`<div><dt>Session checked</dt><dd>${ago(conn?.checked)}</dd></div>`}
     </dl>
     ${connectJob && html`<${Connect} jobId=${connectJob} onFinished=${() => { setConnectJob(null); refresh(); }} />`}
     ${!connectJob && conn && html`<section class="section">
@@ -469,7 +512,7 @@ const shortModel = (m) => {
 };
 
 function Race({ raceId, overview }) {
-  const sites = (overview?.sites || []).filter((s) => s.connection === "active");
+  const sites = (overview?.sites || []).filter((s) => s.race_ready);
   const [domain, setDomain] = useState(null);
   const [presets, setPresets] = useState(null);
   const [task, setTask] = useState("");
@@ -478,11 +521,13 @@ function Race({ raceId, overview }) {
   useEffect(() => {
     if (d) api(`/api/race/presets/${d}`).then((p) => { setPresets(p); setTask((t) => (t && (raceId || p.tasks.includes(t)) ? t : p.tasks[0])); });
   }, [d]);
-  useEffect(() => { if (presets && task && !presets.tasks.includes(task)) setCustom(true); }, [presets, task]);
+  useEffect(() => { if (presets?.custom && task && !presets.tasks.includes(task)) setCustom(true); }, [presets, task]);
   const run = async (e) => {
     e.preventDefault();
-    const { race_id } = await api("/api/race", { method: "POST", body: { domain: d, task } });
-    location.hash = `#/race/${race_id}`;
+    try {
+      const { race_id } = await api("/api/race", { method: "POST", body: { domain: d, task } });
+      location.hash = `#/race/${race_id}`;
+    } catch (x) { alert(x.message); }
   };
   return html`
     <${PageHeader} eyebrow="Race" title="Same task, four ways">
@@ -502,7 +547,7 @@ function Race({ raceId, overview }) {
           : html`<select id="rtask" class="input" value=${task}
               onChange=${(e) => (e.target.value === "__custom" ? (setCustom(true), setTask("")) : setTask(e.target.value))}>
               ${(presets?.tasks || []).map((t) => html`<option value=${t}>${t}</option>`)}
-              <option value="__custom">Custom…</option></select>`}</div>
+              ${presets?.custom && html`<option value="__custom">Custom…</option>`}</select>`}</div>
       <button class="button primary large" disabled=${!d || !task}>Run</button>
     </form>
     ${raceId && html`<section class="section"><${RaceView} id=${raceId} frontier=${presets?.frontier} open=${presets?.open}
@@ -572,7 +617,7 @@ function Reconnect({ token }) {
 
 /* ---------- app ---------- */
 
-function Shell({ page, arg, children, overview, signedIn, skillsCount }) {
+function Shell({ page, arg, children, overview, role, skillsCount }) {
   const [jobDomain, setJobDomain] = useState(null);
   useEffect(() => { setJobDomain(null); if (page === "job") api(`/api/jobs/${arg}`).then((j) => setJobDomain(j.domain)).catch(() => {}); }, [page, arg]);
   const site = page === "site" ? overview?.sites?.find((s) => s.domain === arg)?.title || arg : page === "job" ? jobDomain : null;
@@ -589,9 +634,12 @@ function Shell({ page, arg, children, overview, signedIn, skillsCount }) {
         <a class="nav-item" href="#/skills" aria-current=${cur(page === "skills")}><${SkillsIcon} />Skills${count(skillsCount)}</a>
         <a class="nav-item" href="#/race" aria-current=${cur(page === "race")}><${RaceIcon} />Race</a>
       </nav>
-      <div class="sidebar-bottom">${signedIn
-        ? html`<button class="signout" onClick=${signOut}>Sign out</button>`
-        : html`<a class="signout" href="#/login?next=/skills">Sign in</a>`}</div>
+      <div class="sidebar-bottom">${role === "admin"
+        ? html`<span class="muted">Admin</span><button class="signout" onClick=${signOut}>Sign out</button>`
+        : role === "guest"
+          ? html`<span class="muted">Guest</span><button class="signout" onClick=${signOut}>Sign out</button>
+              <a class="signout" href="#/login?admin=1">Admin sign in</a>`
+          : html`<a class="signout" href="#/login?next=/skills">Sign in</a>`}</div>
     </aside>
     <main class="app-main"><div class="page">${children}</div></main>
   </div>`;
@@ -605,15 +653,15 @@ function App() {
   const [skills] = usePoll(() => (bare ? Promise.resolve(null) : api("/api/skills")), bare ? 0 : 30000, [bare]);
   if (page === "login") return html`<${Login} query=${query} />`;
   if (page === "r") return html`<${Reconnect} token=${arg} />`;
-  const signedIn = !!overview && !overviewErr;
+  const role = overviewErr ? null : overview?.role;
   let view;
   if (page === "site") view = html`<${Site} domain=${arg} />`;
   else if (page === "sites") view = html`<${Sites} overview=${overview} />`;
-  else if (page === "skills") view = html`<${Skills} admin=${signedIn} />`;
+  else if (page === "skills") view = html`<${Skills} admin=${role === "admin"} />`;
   else if (page === "job") view = html`<${Generate} id=${arg} />`;
   else if (page === "race") view = html`<${Race} raceId=${arg} overview=${overview} />`;
   else view = html`<${Home} overview=${overview} />`;
-  return html`<${Shell} page=${page} arg=${arg} overview=${overview} signedIn=${signedIn}
+  return html`<${Shell} page=${page} arg=${arg} overview=${overview} role=${role}
     skillsCount=${skills?.lessons?.length}>${view}<//>`;
 }
 

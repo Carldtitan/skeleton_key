@@ -119,6 +119,11 @@ MIGRATIONS = [
     "ALTER TABLE connections ADD COLUMN identity TEXT",
     """CREATE TABLE IF NOT EXISTS reconnect_tokens (
         token TEXT PRIMARY KEY, connection_id TEXT, domain TEXT, job_id TEXT, expires REAL, used INTEGER DEFAULT 0)""",
+    # Guest mode: a guest holds one of a few seats; their connections and connect jobs carry their id.
+    "ALTER TABLE connections ADD COLUMN owner TEXT",
+    "ALTER TABLE connections ADD COLUMN expires REAL",
+    "ALTER TABLE jobs ADD COLUMN owner TEXT",
+    "CREATE TABLE IF NOT EXISTS guests (id TEXT PRIMARY KEY, created REAL, expires REAL, ended INTEGER DEFAULT 0)",
 ]
 
 
@@ -312,9 +317,48 @@ def list_connections():
 
 
 def connection_for_domain(domain):
+    """The operator's own connection (guests' connections are never used for races, checks or the site page)."""
     with conn() as c:
-        return _connection(c.execute("SELECT * FROM connections WHERE domain=? ORDER BY updated DESC LIMIT 1",
-                                     (domain,)).fetchone())
+        return _connection(c.execute("SELECT * FROM connections WHERE domain=? AND owner IS NULL "
+                                     "ORDER BY updated DESC LIMIT 1", (domain,)).fetchone())
+
+
+def guest_connection(guest_id, domain):
+    with conn() as c:
+        return _connection(c.execute("SELECT * FROM connections WHERE domain=? AND owner=? ORDER BY updated DESC "
+                                     "LIMIT 1", (domain, guest_id)).fetchone())
+
+
+def guest_connections(guest_id=None):
+    """Every guest connection (or one guest's), newest first."""
+    q, args = "SELECT * FROM connections WHERE owner IS NOT NULL", ()
+    if guest_id:
+        q, args = q + " AND owner=?", (guest_id,)
+    with conn() as c:
+        return [_connection(r) for r in c.execute(q + " ORDER BY updated DESC", args)]
+
+
+def create_guest(guest_id, expires):
+    with conn() as c:
+        c.execute("INSERT INTO guests (id, created, expires) VALUES (?,?,?)", (guest_id, time.time(), expires))
+
+
+def get_guest(guest_id):
+    with conn() as c:
+        r = c.execute("SELECT * FROM guests WHERE id=?", (guest_id,)).fetchone()
+    return dict(r) if r else None
+
+
+def update_guest(guest_id, **fields):
+    cols = ", ".join(f"{k}=?" for k in fields)
+    with conn() as c:
+        c.execute(f"UPDATE guests SET {cols} WHERE id=?", (*fields.values(), guest_id))
+
+
+def active_guests(now=None):
+    with conn() as c:
+        return [dict(r) for r in c.execute("SELECT * FROM guests WHERE ended=0 AND expires>? ORDER BY expires",
+                                           (now or time.time(),))]
 
 
 def create_reconnect_token(token, connection_id, domain, ttl=1800):

@@ -81,8 +81,9 @@ def tasks(domain):
     return json.loads(path.read_text()) if path.exists() else []
 
 
-def presets(domain):
-    return [t["question"] for t in tasks(domain)]
+def presets(domain, public_only=False):
+    """Preset questions; public_only drops tasks whose answer is the operator's personal data."""
+    return [t["question"] for t in tasks(domain) if not (public_only and t.get("personal"))]
 
 
 def task_for(domain, question):

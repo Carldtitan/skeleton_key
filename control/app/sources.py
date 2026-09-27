@@ -42,23 +42,50 @@ async def find_sources(site, ops):
                      f"  returns: {returns or '-'}" + (f"\n  needs: {needs}" if needs else ""))
     if not any(_needs(o) for o in ops):
         return {}
-    text, _ = await llm.chat(CODE_MODEL, [{"role": "user", "content": SOURCES_PROMPT.format(
-        site=site, ops="\n".join(lines))}], max_tokens=16000)
-    raw = llm.parse_json(text) or {}
+    try:
+        text, _ = await llm.chat(CODE_MODEL, [{"role": "user", "content": SOURCES_PROMPT.format(
+            site=site, ops="\n".join(lines))}], max_tokens=16000)
+        raw = llm.parse_json(text) or {}
+    except Exception:
+        raw = by_field_name(ops)  # the model gave no usable answer: fall back to exact field-name matches
     names = {o["name"]: o for o in ops}
     found = {}
     for key, v in raw.items():
         op, _, param = str(key).partition(".")
         if not isinstance(v, dict) or op not in names or v.get("from") not in reads or v["from"] == op:
             continue
+        if param in {p["name"] for p in _needs(names[v["from"]])}:
+            continue  # circular: the source needs the same id
         if param in {p["name"] for p in _needs(names[op])}:
             found.setdefault(op, {})[param] = {"from": v["from"], "field": str(v.get("field") or param)}
     return found
 
 
-def apply_sources(ops, found):
-    """Write the links into each op's spec: param descriptions (what agents read) and spec['sources']."""
+def by_field_name(ops):
+    """Link a parameter to a read operation whose result has a field of exactly that name (user_id -> user_id).
+    Operations that need no ids themselves are preferred, since an agent can call them straight away."""
+    reads = [o for o in ops if o["spec"].get("side_effect") == "read"]
+    out = {}
     for o in ops:
+        for p in _needs(o):
+            if p["name"] in {"slug", "handle", "username"}:
+                continue  # users supply these themselves
+            candidates = [r for r in reads if r["name"] != o["name"] and p["name"] in
+                          {x["name"] for x in r["spec"].get("returns", []) if isinstance(x, dict)}
+                          and p["name"] not in {q["name"] for q in _needs(r)}]  # no circular "get the id with the id"
+            candidates.sort(key=lambda r: len(_needs(r)))
+            if candidates:
+                out[f"{o['name']}.{p['name']}"] = {"from": candidates[0]["name"], "field": p["name"]}
+    return out
+
+
+def apply_sources(ops, found):
+    """Write the links into each op's spec: param descriptions (what agents read) and spec['sources'].
+    Earlier links are cleared first, so re-running replaces them."""
+    for o in ops:
+        o["spec"].pop("sources", None)
+        for p in o["spec"].get("params", []):
+            p["description"] = re.sub(r"\s*Get it from `[^`]+`.*$", "", p.get("description", ""))
         links = found.get(o["name"])
         if not links:
             continue

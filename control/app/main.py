@@ -14,7 +14,7 @@ from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from pydantic import BaseModel
 
-from . import db, gateway, jobs, lessons, liveview, mcp_server, race
+from . import db, gateway, guests, jobs, lessons, liveview, mcp_server, race
 from .config import LIVE_BASE, ANTHROPIC_API_KEY, BROWSE_MODEL, FRONTIER_MODEL, HEALTH_CHECK_SECONDS, PUBLIC_URL
 from .endpoints import site_domain
 
@@ -32,8 +32,10 @@ async def lifespan(_app):
         if j["status"] in RUNNING:
             db.update_job(j["id"], status="interrupted", status_detail="control plane restarted")
     health = asyncio.create_task(gateway.health_loop(HEALTH_CHECK_SECONDS, PUBLIC_URL))
+    cleanup = asyncio.create_task(guests.cleanup_loop())
     yield
     health.cancel()
+    cleanup.cancel()
 
 
 app = FastAPI(title="Skeleton Key", lifespan=lifespan, docs_url=None, redoc_url=None)
@@ -42,14 +44,35 @@ app.include_router(liveview.router)
 app.include_router(mcp_server.router)
 
 
-def admin(request: Request, creds: HTTPBasicCredentials | None = Depends(basic)):
-    """Operator auth: the UI's session cookie, or HTTP basic auth for scripts."""
+def is_admin(request, creds):
     cookie = request.cookies.get(SESSION_COOKIE, "")
     if cookie and hmac.compare_digest(cookie, SESSION_VALUE):
-        return
-    if creds and secrets.compare_digest(creds.password, ADMIN_PASSWORD):
-        return
+        return True
+    return bool(creds and secrets.compare_digest(creds.password, ADMIN_PASSWORD))
+
+
+def admin(request: Request, creds: HTTPBasicCredentials | None = Depends(basic)):
+    """Operator auth: the UI's session cookie, or HTTP basic auth for scripts."""
+    if not is_admin(request, creds):
+        raise HTTPException(401, "login required")
+
+
+def viewer(request: Request, creds: HTTPBasicCredentials | None = Depends(basic)):
+    """The operator, or a guest holding an active seat."""
+    if is_admin(request, creds):
+        return {"role": "admin"}
+    guest_id = guests.from_cookie(ADMIN_PASSWORD, request.cookies.get(guests.COOKIE))
+    if guest_id:
+        return {"role": "guest", "id": guest_id}
     raise HTTPException(401, "login required")
+
+
+def own_job(job, who):
+    """Guests may only see and drive their own connect jobs."""
+    if not job:
+        raise HTTPException(404)
+    if who["role"] != "admin" and job.get("owner") != who["id"]:
+        raise HTTPException(403, "not your job")
 
 
 def live_url(job):
@@ -78,14 +101,40 @@ def login(body: Login, response: Response):
 
 
 @app.post("/api/logout")
-def logout(response: Response):
+async def logout(request: Request, response: Response):
+    guest_id = guests.from_cookie(ADMIN_PASSWORD, request.cookies.get(guests.COOKIE))
+    if guest_id:
+        await guests.end_guest(guest_id)  # frees the seat and closes the guest's connections
     response.delete_cookie(SESSION_COOKIE)
+    response.delete_cookie(guests.COOKIE)
     return {"ok": True}
 
 
-@app.get("/api/me", dependencies=[Depends(admin)])
-def me():
-    return {"ok": True, "frontier": FRONTIER_MODEL if ANTHROPIC_API_KEY else None}
+@app.get("/api/guest")
+def guest_seats():
+    return guests.seats()
+
+
+@app.post("/api/guest")
+def guest_start(request: Request, response: Response):
+    if guests.from_cookie(ADMIN_PASSWORD, request.cookies.get(guests.COOKIE)):
+        return {"ok": True}
+    try:
+        guest_id = guests.start()
+    except guests.Full as e:
+        return JSONResponse({"detail": f"All {guests.MAX_GUESTS} guest seats are taken. Try again later.",
+                             "frees_at": e.frees_at}, status_code=409)
+    response.set_cookie(guests.COOKIE, guests.cookie_value(ADMIN_PASSWORD, guest_id), httponly=True, secure=True,
+                        samesite="lax", max_age=2 * 86400)
+    return {"ok": True}
+
+
+@app.get("/api/me")
+def me(who=Depends(viewer)):
+    out = {"ok": True, "role": who["role"], "frontier": FRONTIER_MODEL if ANTHROPIC_API_KEY else None}
+    if who["role"] == "guest":
+        out["expires"] = db.get_guest(who["id"])["expires"]
+    return out
 
 
 # --- Home ----------------------------------------------------------------------------------------
@@ -95,14 +144,22 @@ def connection_view(conn):
         return None
     return {"id": conn["id"], "status": conn["status"], "checked": conn.get("checked"),
             "mcp_url": f"{PUBLIC_URL}/mcp/{conn['api_key']}" if conn.get("api_key") else None,
-            "api_key": conn.get("api_key")}
+            "api_key": conn.get("api_key"), "expires": conn.get("expires")}
 
 
-@app.get("/api/overview", dependencies=[Depends(admin)])
-def overview():
+def my_connection(domain, who):
+    """Admins see the operator's connection; guests only ever see their own."""
+    if who["role"] == "admin":
+        return db.connection_for_domain(domain)
+    return db.guest_connection(who["id"], domain)
+
+
+@app.get("/api/overview")
+def overview(who=Depends(viewer)):
     sites = []
     for s in db.list_sites():
-        conn = db.connection_for_domain(s["domain"])
+        conn = my_connection(s["domain"], who)
+        operator = db.connection_for_domain(s["domain"])
         ops = s["spec"]["operations"]
         sites.append({"domain": s["domain"], "title": s["title"], "operations": len(ops),
                       "verified": sum(o["status"] == "verified" for o in ops),
@@ -110,13 +167,14 @@ def overview():
                       "writes": sum(o["spec"].get("side_effect") != "read" for o in ops),
                       "published": s["published"],
                       "connection": (connection_view(conn) or {}).get("status"),
-                      "checked": (conn or {}).get("checked")})
+                      "checked": (conn or {}).get("checked"),
+                      "race_ready": bool(operator and operator["status"] == "active")})
     published = {s["domain"] for s in sites}
     running = [{"id": j["id"], "domain": site_domain(j["site_url"]), "status": j["status"]}
                for j in db.list_jobs()
                if j.get("kind", "generate") == "generate" and j["status"] in RUNNING + ("explored", "generated")
-               and site_domain(j["site_url"]) not in published]
-    return {"sites": sites, "running": running}
+               and site_domain(j["site_url"]) not in published] if who["role"] == "admin" else []
+    return {"sites": sites, "running": running, "role": who["role"], "guests": guests.seats()}
 
 
 # --- Generate ------------------------------------------------------------------------------------
@@ -157,11 +215,10 @@ def phase_of(job, ops):
     return s
 
 
-@app.get("/api/jobs/{job_id}", dependencies=[Depends(admin)])
-def get_job(job_id: str, after: int = 0):
+@app.get("/api/jobs/{job_id}")
+def get_job(job_id: str, after: int = 0, who=Depends(viewer)):
     job = db.get_job(job_id)
-    if not job:
-        raise HTTPException(404)
+    own_job(job, who)
     ops = db.operations(job_id)
     with db.conn() as c:
         step_rows = c.execute("SELECT step, label, detail FROM steps WHERE job_id=? ORDER BY step", (job_id,)).fetchall()
@@ -186,8 +243,9 @@ def get_job(job_id: str, after: int = 0):
     }
 
 
-@app.post("/api/jobs/{job_id}/human-done", dependencies=[Depends(admin)])
-def human_done(job_id: str):
+@app.post("/api/jobs/{job_id}/human-done")
+def human_done(job_id: str, who=Depends(viewer)):
+    own_job(db.get_job(job_id), who)
     ev = jobs.human_done.get(job_id)
     if not ev:
         raise HTTPException(409, "job is not waiting for a human")
@@ -230,8 +288,8 @@ async def stop(job_id: str):
 
 # --- Site page -----------------------------------------------------------------------------------
 
-@app.get("/api/sites/{domain}", dependencies=[Depends(admin)])
-def site_detail(domain: str):
+@app.get("/api/sites/{domain}")
+def site_detail(domain: str, who=Depends(viewer)):
     site = db.get_site(domain)
     if not site:
         raise HTTPException(404)
@@ -248,10 +306,12 @@ def site_detail(domain: str):
                                 .get("application/json", {}).get("schema", {}).get("properties", {}).items()
                                 if v.get("example") is not None},
                     "code": o.get("public_code") or o["code"]})
-    conn = db.connection_for_domain(domain)
+    conn = my_connection(domain, who)
+    if conn and conn["status"] == "ended":
+        conn = None  # an ended guest connection is gone; offer Connect again
     job = db.get_job(site["job_id"])
-    return {"domain": domain, "title": site["title"], "published": site["published"],
-            "operations": ops, "connection": connection_view(conn),
+    return {"domain": domain, "title": site["title"], "published": site["published"], "role": who["role"],
+            "seats": guests.seats(), "operations": ops, "connection": connection_view(conn),
             "openapi_url": f"{PUBLIC_URL}/specs/{domain}/openapi.json",
             "download_url": f"{PUBLIC_URL}/specs/{domain}/download.zip",
             "rest_base": f"{PUBLIC_URL}/v1/{domain}",
@@ -259,13 +319,26 @@ def site_detail(domain: str):
             "generated_from": job["site_url"] if job else None}
 
 
-@app.post("/api/sites/{domain}/connect", dependencies=[Depends(admin)])
-async def connect(domain: str):
-    conn = db.connection_for_domain(domain)
+@app.post("/api/sites/{domain}/connect")
+async def connect(domain: str, who=Depends(viewer)):
+    conn = my_connection(domain, who)
+    if conn and conn["status"] == "ended":
+        conn = None
     try:
-        return {"job_id": jobs.start_connect(domain, conn["id"] if conn else None)}
+        return {"job_id": jobs.start_connect(domain, conn["id"] if conn else None, owner=who.get("id"))}
     except ValueError as e:
         raise HTTPException(404, str(e))
+
+
+@app.post("/api/sites/{domain}/disconnect")
+async def disconnect(domain: str, who=Depends(viewer)):
+    """Guests end their own connection early (closes its browser; the key stops working)."""
+    if who["role"] != "guest":
+        raise HTTPException(403, "only guest connections can be disconnected here")
+    conn = db.guest_connection(who["id"], domain)
+    if conn and conn["status"] != "ended":
+        await guests.end_connection(conn)
+    return {"ok": True}
 
 
 @app.post("/api/sites/{domain}/check", dependencies=[Depends(admin)])
@@ -347,18 +420,29 @@ class RaceRequest(BaseModel):
     task: str
 
 
-@app.get("/api/race/presets/{domain}", dependencies=[Depends(admin)])
-def race_presets(domain: str):
-    return {"tasks": race.presets(domain), "frontier": FRONTIER_MODEL if ANTHROPIC_API_KEY else None,
-            "open": BROWSE_MODEL}
+@app.get("/api/race/presets/{domain}")
+def race_presets(domain: str, who=Depends(viewer)):
+    guest = who["role"] == "guest"
+    return {"tasks": race.presets(domain, public_only=guest), "custom": not guest,
+            "frontier": FRONTIER_MODEL if ANTHROPIC_API_KEY else None, "open": BROWSE_MODEL}
 
 
-@app.post("/api/race", dependencies=[Depends(admin)])
-async def start_race(body: RaceRequest):
+@app.post("/api/race")
+async def start_race(body: RaceRequest, who=Depends(viewer)):
     conn = db.connection_for_domain(body.domain)
     if not conn or conn["status"] != "active":
         raise HTTPException(409, "connect this site first")
-    return {"race_id": race.start_race(conn, body.task, PUBLIC_URL, jobs.tasks)}
+    if who["role"] == "guest":
+        # Races run as the operator's account: guests get the preset tasks that don't reveal personal data.
+        if body.task not in race.presets(body.domain, public_only=True):
+            raise HTTPException(403, "guests can run the preset tasks")
+        if any(j.get("kind") == "race" and j["status"] == "racing" and j.get("owner") == who["id"]
+               for j in db.list_jobs()):
+            raise HTTPException(429, "your previous race is still running")
+    race_id = race.start_race(conn, body.task, PUBLIC_URL, jobs.tasks)
+    if who["role"] == "guest":
+        db.update_job(race_id, owner=who["id"])
+    return {"race_id": race_id}
 
 
 @app.post("/api/bench/validate/{domain}", dependencies=[Depends(admin)])
@@ -370,7 +454,7 @@ async def bench_validate(domain: str):
     return {"tasks": await race.validate_tasks(conn, PUBLIC_URL)}
 
 
-@app.get("/api/race/{race_id}", dependencies=[Depends(admin)])
+@app.get("/api/race/{race_id}", dependencies=[Depends(viewer)])
 def race_status(race_id: str):
     job = db.get_job(race_id)
     if not job or job.get("kind") != "race":
