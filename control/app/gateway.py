@@ -97,6 +97,56 @@ async def refresh_auth(conn):
     return False
 
 
+def identity_values(output, prefix=""):
+    """Id-like values in a get_current_user result, keyed by their path (e.g. {"user_id": "1qIus..."})."""
+    found = {}
+    if isinstance(output, dict):
+        for k, v in output.items():
+            found.update(identity_values(v, f"{prefix}{k}."))
+    elif isinstance(output, str) and len(output) >= 8 and re.search(r"\d", output)             and not re.search(r"\s|://|@", output) and not re.match(r"\d{4}-\d{2}-\d{2}", output):  # not dates
+        found[prefix.rstrip(".")] = output
+    return found
+
+
+def site_identity(site):
+    """The generating account's ids. Generated code can contain them (e.g. a userId in a request body)."""
+    if site["spec"].get("identity") is not None:
+        return site["spec"]["identity"]
+    me = next((o for o in db.operations(site["job_id"])
+               if o["name"] == "get_current_user" and o["status"] == "verified"), None)
+    return identity_values(((me or {}).get("last_result") or [{}])[0].get("output"))
+
+
+async def connection_identity(conn, site):
+    """This connection's own ids, looked up once with get_current_user and cached on the connection."""
+    if conn.get("identity") is not None:
+        return conn["identity"]
+    op = next((o for o in site["spec"]["operations"] if o["name"] == "get_current_user"), None)
+    identity = {}
+    if op:
+        _, result = await _run(site, op, session_of(conn), {})
+        if result.get("ok"):
+            identity = identity_values(result.get("output"))
+    conn["identity"] = identity
+    db.update_connection(conn["id"], identity=identity)
+    return identity
+
+
+async def personalize(conn, site, op):
+    """Swap the generating account's ids in an operation's code for this connection's ids, so an API
+    generated from one account works for any account that connects."""
+    theirs = site_identity(site)
+    if not theirs or op["name"] == "get_current_user":
+        return op
+    mine = await connection_identity(conn, site)
+    code = op["code"]
+    for path, old in theirs.items():
+        new = mine.get(path)
+        if new and new != old:
+            code = code.replace(old, new)
+    return op if code == op["code"] else {**op, "code": code}
+
+
 async def execute(conn, op_name, params, base_url=""):
     """Run one operation for a connection. Returns (output, meta) or raises GatewayError."""
     domain = conn["domain"]
@@ -105,6 +155,7 @@ async def execute(conn, op_name, params, base_url=""):
     if conn["status"] == "expired":
         raise GatewayError("session_expired", "the site session expired; a human must log in again", 401,
                            reconnect_url=reconnect_url(conn, base_url))
+    op = await personalize(conn, site, op)
     started = time.monotonic()
     res, result = await _run(site, op, session_of(conn), params)
     if not result.get("ok") and looks_unauthenticated(result) and await refresh_auth(conn):

@@ -115,6 +115,8 @@ MIGRATIONS = [
     # Bearer-token apps: auth headers the site's requests carry, and the browser storage to re-mint them.
     "ALTER TABLE connections ADD COLUMN auth_headers TEXT",
     "ALTER TABLE connections ADD COLUMN storage_state TEXT",
+    # The connected account's own ids (from get_current_user), swapped in for the generating account's ids.
+    "ALTER TABLE connections ADD COLUMN identity TEXT",
     """CREATE TABLE IF NOT EXISTS reconnect_tokens (
         token TEXT PRIMARY KEY, connection_id TEXT, domain TEXT, job_id TEXT, expires REAL, used INTEGER DEFAULT 0)""",
 ]
@@ -272,7 +274,7 @@ def save_connection(conn_id, domain, api_key_hash, cookies, job_id, status="acti
 
 
 def update_connection(conn_id, **fields):
-    for k in ("cookies", "auth_headers", "storage_state"):
+    for k in ("cookies", "auth_headers", "storage_state", "identity"):
         if k in fields and not isinstance(fields[k], str) and fields[k] is not None:
             fields[k] = json.dumps(fields[k])
     fields["updated"] = time.time()
@@ -288,6 +290,7 @@ def _connection(r):
     d["cookies"] = json.loads(d.get("cookies") or "[]")
     d["auth_headers"] = json.loads(d.get("auth_headers") or "{}")
     d["storage_state"] = json.loads(d["storage_state"]) if d.get("storage_state") else None
+    d["identity"] = json.loads(d["identity"]) if d.get("identity") else None
     return d
 
 
@@ -304,7 +307,7 @@ def get_connection(conn_id):
 def list_connections():
     with conn() as c:
         return [{k: v for k, v in dict(r).items() if k not in ("cookies", "api_key_hash", "auth_headers", "storage_state",
-                                                               "api_key")}
+                                                               "api_key", "identity")}
                 for r in c.execute("SELECT * FROM connections ORDER BY created")]
 
 

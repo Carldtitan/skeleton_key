@@ -311,8 +311,11 @@ async def publish(job_id, base_url):
     # The gateway runs the un-redacted code (it may need exact constants); docs are what's published.
     private = {o["name"]: o for o in ops}
     manifest_ops = [{**o, "code": private[o["name"]]["code"], "public_code": o["code"]} for o in public_ops]
+    from .gateway import identity_values
+    me = next((o for o in db.operations(job_id) if o["name"] == "get_current_user" and o["status"] == "verified"), None)
+    identity = identity_values(((me or {}).get("last_result") or [{}])[0].get("output"))
     db.save_site(domain, job_id, title, {"operations": manifest_ops, "site_module": site_module,
-                                         "login_url": job["site_url"], "openapi": spec})
+                                         "login_url": job["site_url"], "openapi": spec, "identity": identity})
     summary = {"domain": domain, "operations": len(public_ops), "renamed": renamed_ops, "dropped": sorted(drop),
                "redacted_values": len(values), "files": sorted(files)}
     db.add_event(job_id, "published", summary)

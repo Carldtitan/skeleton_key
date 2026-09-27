@@ -111,9 +111,13 @@ async def run_publish(job_id, create_connection=False):
 
 
 async def run_connect(job_id):
-    """Login-only job: capture a fresh session for a new or existing connection, then drop the sandbox."""
+    """Login-only job: capture a fresh session (possibly a different account) for a new or existing connection.
+
+    Cookie-only sites: the sandbox is dropped afterwards. Bearer-token sites (e.g. Firebase): the logged-in
+    sandbox is kept as the connection's session keeper, so expiring tokens can be re-minted without a human.
+    """
     job = db.get_job(job_id)
-    sb = None
+    sb, keep = None, False
     try:
         worker, sb, ok = await sandbox_and_login(job_id, job["site_url"])
         if not ok:
@@ -122,22 +126,36 @@ async def run_connect(job_id):
         async with SandboxBrowser(job_id, sb["cdp"]) as b:
             cookies = await b.cookies()
         domain = site_domain(job["site_url"])
-        if job["connection_id"] and db.get_connection(job["connection_id"]):
-            conn_id = job["connection_id"]
-            db.update_connection(conn_id, cookies=cookies, status="active", job_id=job_id)
+        previous = db.get_connection(job["connection_id"]) if job["connection_id"] else None
+        if previous:
+            conn_id = previous["id"]
+            # A reconnect may be a different account: drop the old account's token and cached identity.
+            db.update_connection(conn_id, cookies=cookies, status="active", job_id=job_id,
+                                 auth_headers={}, storage_state=None, identity=None)
             db.add_event(job_id, "connection_refreshed", {"connection_id": conn_id})
         else:
             conn_id, key = gateway.new_connection(domain, cookies, job_id)
             db.add_event(job_id, "connection_created", {"connection_id": conn_id, "api_key": key,
                                                         "mcp_url": f"{PUBLIC_URL}/mcp/{key}"})
         await capture_session_auth(db.get_job(job_id), conn_id)
+        keep = bool(db.get_connection(conn_id).get("auth_headers"))
+        if keep and previous and previous.get("job_id"):
+            await retire_keeper(previous["job_id"])  # the old session keeper is no longer needed
         set_status(job_id, "connected", domain)
     except Exception as e:
         set_status(job_id, "failed", f"{type(e).__name__}: {e}")
     finally:
-        if sb:
+        if sb and not keep:
             await workers.delete_sandbox(job["worker"] or db.get_job(job_id)["worker"], sb["id"])
             db.update_job(job_id, view_token=None)
+
+
+async def retire_keeper(job_id):
+    """Delete a previous connect job's kept sandbox. Generation sandboxes are left alone (regeneration uses them)."""
+    old = db.get_job(job_id)
+    if old and old.get("kind") == "connect" and old.get("sandbox_id") and old.get("view_token"):
+        await workers.delete_sandbox(old["worker"], old["sandbox_id"])
+        db.update_job(job_id, view_token=None)
 
 
 def start_generation(job_id, retry_failed=False, fresh=False, then_publish=False):
