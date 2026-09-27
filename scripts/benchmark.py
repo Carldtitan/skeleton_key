@@ -4,7 +4,8 @@ Tasks come from control/app/bench_tasks/<domain>.json (question + oracle + UI pa
 the validator finds its oracle answer in the site's UI, so browser lanes are never scored on impossible tasks.
 Results go to bench/ (gitignored: answers can contain the account owner's data).
 
-Usage: python scripts/benchmark.py [runs_per_task] [domain]
+Usage: python scripts/benchmark.py [runs_per_task] [domain] [--resume]
+  --resume keeps bench/results.json and only runs the (task, run) pairs that are missing.
 """
 import collections
 import json
@@ -34,8 +35,10 @@ def run_race(client, domain, task):
 
 
 def main():
-    runs = int(sys.argv[1]) if len(sys.argv) > 1 else 3
-    domain = sys.argv[2] if len(sys.argv) > 2 else "luma.com"
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    resume = "--resume" in sys.argv
+    runs = int(args[0]) if args else 3
+    domain = args[1] if len(args) > 1 else "luma.com"
     OUT.mkdir(exist_ok=True)
     with httpx.Client(base_url=BASE, auth=AUTH, verify=certifi.where(), timeout=600) as client:
         validation = client.post(f"/api/bench/validate/{domain}").json()["tasks"]
@@ -44,9 +47,12 @@ def main():
             print(f"validate {v['id']}: {'PASSABLE' if v.get('passable') else 'REJECTED'} - {v.get('why')}", flush=True)
         usable = [v["question"] for v in validation if v.get("passable")]
 
-        rows = []
+        rows = json.loads((OUT / "results.json").read_text()) if resume and (OUT / "results.json").exists() else []
+        done = {(r["task"], r["run"]) for r in rows}
         for task in usable:
             for i in range(runs):
+                if (task, i) in done:
+                    continue
                 rid, d = run_race(client, domain, task)
                 for lane, r in ((d.get("result") or {}).get("results") or {}).items():
                     rows.append({"task": task, "run": i, "race": rid, "lane": lane, **{k: r.get(k) for k in (

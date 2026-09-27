@@ -86,11 +86,25 @@ async def execute(conn, op_name, params, base_url=""):
         return result.get("output"), {"seconds": seconds, "model_tokens": 0}
     code = result.get("error_code") or "upstream_error"
     if code == "session_expired":
+        # One refused request isn't proof the login is gone (sites and bot protection refuse single calls).
+        # Only expire the connection if a cheap session probe is refused too.
+        probe = probe_operation(domain)
+        if probe and probe != op_name and await _session_alive(conn, site, probe):
+            raise GatewayError("upstream_error", "the site refused this request, but the session is still valid", 502)
         db.update_connection(conn["id"], status="expired")
         raise GatewayError(code, "the site session expired; a human must log in again", 401,
                            reconnect_url=reconnect_url(conn, base_url))
     status = {"not_found": 404, "rate_limited": 429, "bad_request": 400, "blocked": 403}.get(code, 502)
     raise GatewayError(code, (result.get("error") or res.get("error") or "operation failed")[:500], status)
+
+
+async def _session_alive(conn, site, probe):
+    op = next(o for o in site["spec"]["operations"] if o["name"] == probe)
+    session = {"cookies": {c["name"]: c["value"] for c in conn["cookies"]
+                           if c["domain"].lstrip(".").endswith(site_domain(conn["domain"]))}}
+    res = await run_calls({"_site.py": site["spec"]["site_module"], f"{op['module']}.py": op["code"]}, session,
+                          [{"op": op["module"], "params": {}}])
+    return bool((res.get("results") or [{}])[0].get("ok"))
 
 
 def probe_operation(domain):
