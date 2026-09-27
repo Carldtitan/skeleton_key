@@ -44,7 +44,7 @@ Vultr is the whole control plane, not just hosting.
 
 | Vultr product | What it does in Skeleton Key |
 |---|---|
-| **Cloud Compute VMs** | A **control-plane VM** (FastAPI orchestrator, job engine, MCP and REST gateway) and **two high-performance worker VMs** that run every sandbox. |
+| **Cloud Compute VMs** | A **control-plane VM** that serves the whole web app (dashboard, API, MCP and REST gateway, job engine) and **two high-performance worker VMs** that run every sandbox. |
 | **VPC** | All three machines talk only over a private network. Sandbox ports are bound to the private IP, never the internet. |
 | **Serverless Inference** | Every agent call. **Qwen 3.8 (vision)** explores sites from screenshots; **GLM 5.3** writes, repairs and judges the operation code. OpenAI-compatible, at `https://api.vultrinference.com/v1`. |
 | **Container Registry** | Holds our two sandbox images: `sk-browser` (Chromium via Playwright, with a live view) and `sk-runner` (executes generated code). Workers pull them with read-only credentials. |
@@ -110,4 +110,4 @@ Admins sign in on the same page, paste a login URL into **Generate**, log in onc
 | `worker/` | Worker daemon that starts, caps and destroys sandboxes |
 | `sandbox/` | `sk-browser` and `sk-runner` images |
 | `infra/provision.py` | The Vultr stack, as code |
-| `web/` | The dashboard (Home, Sites, Skills, Race) |
+| `control/app/web/` | The dashboard (Home, Sites, Skills, Race), served by the control VM |
