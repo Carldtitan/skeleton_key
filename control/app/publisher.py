@@ -18,6 +18,7 @@ from . import db, llm
 from .config import CODE_MODEL
 from .endpoints import is_auth_path, site_domain
 from .generator import Generator, check, module_name
+from .sources import apply_sources, find_sources
 
 BUCKET = "sk-specs"
 PUBLISHABLE = {"verified", "unverified_irreversible", "unverified_no_undo"}
@@ -277,6 +278,12 @@ async def publish(job_id, base_url):
     for o in ops:  # keep undo references pointing at the new names
         u = o["spec"].get("undo")
         o["spec"]["undo"] = module_name((plan.get("rename_ops") or {}).get(u, u)) if u else None
+    try:  # tell agents which operation returns each internal id another operation needs
+        found = await find_sources(domain, ops)
+        apply_sources(ops, found)
+        db.add_event(job_id, "sources_linked", {op: {p: v["from"] for p, v in ps.items()} for op, ps in found.items()})
+    except Exception as e:
+        db.add_event(job_id, "error", {"sources": str(e)[:200]})
 
     # 2. Redaction: known personal values, then a model pass for anything left.
     values = personal_values(job_id, db.operations(job_id), db.get_session(job_id) or [])
@@ -322,3 +329,18 @@ async def publish(job_id, base_url):
                "redacted_values": len(values), "files": sorted(files)}
     db.add_event(job_id, "published", summary)
     return summary
+
+
+async def relink_sources(domain, base_url):
+    """Add id-source links to an already published site without regenerating or renaming anything."""
+    site = db.get_site(domain)
+    ops = site["spec"]["operations"]
+    found = await find_sources(domain, ops)
+    apply_sources(ops, found)
+    public = [{**o, "code": o.get("public_code") or o["code"]} for o in ops]
+    spec = openapi(domain, site["title"], public, base_url)
+    site["spec"]["openapi"] = spec
+    db.save_site(domain, site["job_id"], site["title"], site["spec"])
+    await asyncio.to_thread(upload, domain, {"openapi.json": json.dumps(spec, indent=2),
+                                             "README.md": readme(domain, site["title"], public, base_url)})
+    return found

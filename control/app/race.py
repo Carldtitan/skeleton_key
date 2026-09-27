@@ -23,7 +23,7 @@ import secrets
 import time
 from urllib.parse import urlparse
 
-from . import db, gateway, llm, workers
+from . import db, gateway, llm, sources, workers
 from .browser import SandboxBrowser
 from .config import ANTHROPIC_API_KEY, BROWSE_MODEL, FRONTIER_MODEL, JUDGE_MODEL, TOOL_AGENT_MODEL
 from .explorer import element_listing, perform
@@ -228,6 +228,9 @@ async def select_tools(site, task, race_id, lane, pick):
     chosen = [t for t in tools if t["function"]["name"] in wanted][:TOOL_TOP_K]
     if not chosen:
         chosen = tools  # unusable pick: offer everything rather than guess
+    # Also hand over the operations that return the ids the picked ones need (get_user_profile -> user_id).
+    extra = sources.providers(site["spec"]["operations"], [t["function"]["name"] for t in chosen])
+    chosen += [t for t in tools if t["function"]["name"] in extra and t not in chosen]
     event(race_id, lane, "tools", offered=[t["function"]["name"] for t in chosen], of=len(tools))
     return chosen
 
@@ -275,14 +278,18 @@ async def skeleton_key_contestant(race_id, conn, task, base_url):
             if not calls:
                 answer = (msg.get("content") or "").strip() or None
                 break
-            for call in calls:
-                fn = call["function"]
+            async def run_call(fn):
                 try:
                     args = json.loads(fn.get("arguments") or "{}")
                     output, _ = await gateway.execute(conn, fn["name"], args, base_url)
-                    result = json.dumps(output, default=str)[:12000]
+                    return json.dumps(output, default=str)[:12000]
                 except (gateway.GatewayError, ValueError) as e:
-                    result = json.dumps({"error": getattr(e, "code", "bad_arguments"), "message": str(e)})
+                    return json.dumps({"error": getattr(e, "code", "bad_arguments"), "message": str(e)})
+
+            # Calls the model makes in one turn run concurrently, as any real agent harness would.
+            outputs = await asyncio.gather(*(run_call(c["function"]) for c in calls))
+            for call, result in zip(calls, outputs):
+                fn = call["function"]
                 calls_made.append(fn["name"])
                 event(race_id, name, "step", step=turns, action=f"{fn['name']}()", thought=result[:160])
                 messages.append({"role": "tool", "tool_call_id": call["id"], "content": result})
@@ -330,13 +337,15 @@ async def frontier_skeleton_key_contestant(race_id, conn, task, base_url):
             if not uses:
                 answer = text or None
                 break
-            results = []
-            for use in uses:
+            async def run_use(use):
                 try:
                     output, _ = await gateway.execute(conn, use.name, dict(use.input or {}), base_url)
-                    result = json.dumps(output, default=str)[:12000]
+                    return json.dumps(output, default=str)[:12000]
                 except gateway.GatewayError as e:
-                    result = json.dumps({"error": e.code, "message": e.message})
+                    return json.dumps({"error": e.code, "message": e.message})
+
+            results = []
+            for use, result in zip(uses, await asyncio.gather(*(run_use(u) for u in uses))):
                 calls_made.append(use.name)
                 event(race_id, name, "step", step=turns, action=f"{use.name}()", thought=result[:160])
                 results.append({"type": "tool_result", "tool_use_id": use.id, "content": result})
