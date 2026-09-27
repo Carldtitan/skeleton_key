@@ -354,3 +354,16 @@ a.signout { display: grid; place-items: center; }
   font-size: 12px; font-weight: 700; width: fit-content; }
 .lane-kind.vision { color: var(--brown-700); background: var(--oat-100); }
 .lane-kind.text { color: #fff6ed; background: var(--terracotta); }
+
+/* race lanes: the four lanes share rows (head, view, numbers, answer), so boxes and numbers line up
+   whatever the length of titles, tags and answers */
+.lanes { grid-auto-rows: auto; row-gap: 14px; }
+.lane { grid-row: span 4; grid-template-rows: subgrid; row-gap: 14px; }
+.lane-head { display: grid; gap: 8px; align-content: start; }
+.lane-head .lane-kind { margin-top: 0; }
+.lane-view { min-width: 0; }
+.lane-view .log, .lane-view .frame { aspect-ratio: 1280 / 800; height: auto; }
+.lane .answer { min-width: 0; max-height: 280px; overflow: auto; white-space: pre-line; overflow-wrap: anywhere;
+  line-height: 1.5; }
+.lane .answer:empty { padding: 0; border: 0; }
+@media (max-width: 1200px) { .lane { grid-row: auto; grid-template-rows: none; } }

@@ -56,6 +56,13 @@ const fmtUsd = (c) => (c == null ? "–" : c === 0 ? "$0" : c < 0.01 ? `$${c.toF
 const fmtN = (n) => (n == null ? "–" : n.toLocaleString());
 const mask = (key) => (key ? key.slice(0, 7) + "…" : "");
 const plain = (t) => (t || "").replace(/\*\*|__|`/g, "");
+/** Model answers as readable plain text: markdown tables become "a · b" rows, separators and headings go. */
+const answerText = (t) => plain(t).split("\n")
+  .filter((line) => !/^\s*\|?[\s:|-]+\|?\s*$/.test(line) || !line.includes("-"))
+  .map((line) => (/^\s*\|.*\|\s*$/.test(line)
+    ? line.trim().replace(/^\||\|$/g, "").split("|").map((c) => c.trim()).filter(Boolean).join(" · ")
+    : line.replace(/^#+\s*/, "")))
+  .join("\n").replace(/\n{3,}/g, "\n\n").trim();
 const clock = (secs) => `${String(Math.floor(secs / 60)).padStart(2, "0")}:${String(Math.floor(secs % 60)).padStart(2, "0")}`;
 const left = (ts) => {
   const m = Math.max(0, Math.round((ts - Date.now() / 1000) / 60));
@@ -575,13 +582,15 @@ function RaceView({ id, frontier, open, onTask }) {
         const live = !r && c.live_url && data.status === "racing";
         const verdict = r && !r.pending ? (r.correct === true ? ["good", "✓"] : r.correct === false ? ["bad", "✗"] : ["", "?"]) : ["", "…"];
         return html`<div class="lane ${kind === "Skeleton Key" ? "ours" : ""}">
-          <h3>${shortModel(model)} · ${kind}</h3>
-          ${kind === "Skeleton Key"
-            ? html`<span class="lane-kind text">No vision · text only, calls the API (Skeleton Key)</span>`
-            : html`<span class="lane-kind vision">Vision · sees a screenshot every step</span>`}
-          ${live ? html`<${Frame} url=${c.live_url} />`
+          <div class="lane-head">
+            <h3>${shortModel(model)} · ${kind}</h3>
+            ${kind === "Skeleton Key"
+              ? html`<span class="lane-kind text">No vision · text only, calls the API (Skeleton Key)</span>`
+              : html`<span class="lane-kind vision">Vision · sees a screenshot every step</span>`}
+          </div>
+          <div class="lane-view">${live ? html`<${Frame} url=${c.live_url} />`
             : html`<div class="log">${c.steps.map((s) => html`<div>${s.step}. ${s.action}${s.thought
-                ? html` <span class="res">${s.thought}</span>` : ""}</div>`)}</div>`}
+                ? html` <span class="res">${s.thought}</span>` : ""}</div>`)}</div>`}</div>
           <dl class="metrics">
             <div class="metric"><dt>Time</dt><dd>${r?.seconds != null ? fmtS(r.seconds)
               : data.status === "racing" && c.start ? fmtS(Math.max(0, serverNow - c.start))
@@ -590,7 +599,7 @@ function RaceView({ id, frontier, open, onTask }) {
             <div class="metric"><dt>Cost</dt><dd>${fmtUsd(r?.cost_usd ?? c.cost_usd)}</dd></div>
             <div class="metric"><dt>Correct</dt><dd class=${verdict[0]}>${verdict[1]}</dd></div>
           </dl>
-          ${r && html`<div class="answer">${plain(r.answer) || html`<span class="muted">${r.error || "No answer"}</span>`}</div>`}
+          <div class="answer">${r ? answerText(r.answer) || html`<span class="muted">${r.error || "No answer"}</span>` : ""}</div>
         </div>`;
       })}
     </div>
