@@ -112,6 +112,9 @@ MIGRATIONS = [
     # Single-operator demo: keep the key so the site page can show the copy line.
     "ALTER TABLE connections ADD COLUMN api_key TEXT",
     "ALTER TABLE connections ADD COLUMN checked REAL",
+    # Bearer-token apps: auth headers the site's requests carry, and the browser storage to re-mint them.
+    "ALTER TABLE connections ADD COLUMN auth_headers TEXT",
+    "ALTER TABLE connections ADD COLUMN storage_state TEXT",
     """CREATE TABLE IF NOT EXISTS reconnect_tokens (
         token TEXT PRIMARY KEY, connection_id TEXT, domain TEXT, job_id TEXT, expires REAL, used INTEGER DEFAULT 0)""",
 ]
@@ -211,6 +214,11 @@ def upsert_operation(job_id, endpoint, **fields):
             c.execute(f"UPDATE operations SET {cols} WHERE job_id=? AND endpoint=?", (*fields.values(), job_id, endpoint))
 
 
+def clear_operations(job_id):
+    with conn() as c:
+        c.execute("DELETE FROM operations WHERE job_id=?", (job_id,))
+
+
 def operations(job_id):
     with conn() as c:
         rows = c.execute("SELECT * FROM operations WHERE job_id=? ORDER BY name", (job_id,)).fetchall()
@@ -264,36 +272,46 @@ def save_connection(conn_id, domain, api_key_hash, cookies, job_id, status="acti
 
 
 def update_connection(conn_id, **fields):
-    if "cookies" in fields:
-        fields["cookies"] = json.dumps(fields["cookies"])
+    for k in ("cookies", "auth_headers", "storage_state"):
+        if k in fields and not isinstance(fields[k], str) and fields[k] is not None:
+            fields[k] = json.dumps(fields[k])
     fields["updated"] = time.time()
     cols = ", ".join(f"{k}=?" for k in fields)
     with conn() as c:
         c.execute(f"UPDATE connections SET {cols} WHERE id=?", (*fields.values(), conn_id))
 
 
+def _connection(r):
+    if not r:
+        return None
+    d = dict(r)
+    d["cookies"] = json.loads(d.get("cookies") or "[]")
+    d["auth_headers"] = json.loads(d.get("auth_headers") or "{}")
+    d["storage_state"] = json.loads(d["storage_state"]) if d.get("storage_state") else None
+    return d
+
+
 def connection_by_key_hash(api_key_hash):
     with conn() as c:
-        r = c.execute("SELECT * FROM connections WHERE api_key_hash=?", (api_key_hash,)).fetchone()
-    return dict(r) | {"cookies": json.loads(r["cookies"] or "[]")} if r else None
+        return _connection(c.execute("SELECT * FROM connections WHERE api_key_hash=?", (api_key_hash,)).fetchone())
 
 
 def get_connection(conn_id):
     with conn() as c:
-        r = c.execute("SELECT * FROM connections WHERE id=?", (conn_id,)).fetchone()
-    return dict(r) | {"cookies": json.loads(r["cookies"] or "[]")} if r else None
+        return _connection(c.execute("SELECT * FROM connections WHERE id=?", (conn_id,)).fetchone())
 
 
 def list_connections():
     with conn() as c:
-        return [{k: v for k, v in dict(r).items() if k not in ("cookies", "api_key_hash")}
+        return [{k: v for k, v in dict(r).items() if k not in ("cookies", "api_key_hash", "auth_headers", "storage_state",
+                                                               "api_key")}
                 for r in c.execute("SELECT * FROM connections ORDER BY created")]
 
 
 def connection_for_domain(domain):
     with conn() as c:
-        r = c.execute("SELECT * FROM connections WHERE domain=? ORDER BY updated DESC LIMIT 1", (domain,)).fetchone()
-    return dict(r) | {"cookies": json.loads(r["cookies"] or "[]")} if r else None
+        return _connection(c.execute("SELECT * FROM connections WHERE domain=? ORDER BY updated DESC LIMIT 1",
+                                     (domain,)).fetchone())
 
 
 def create_reconnect_token(token, connection_id, domain, ttl=1800):

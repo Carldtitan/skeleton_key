@@ -8,11 +8,28 @@ from urllib.parse import urlparse
 
 NOISE_PATH = re.compile(
     r"/cdn-cgi/|insights|analytics|telemetry|/ping\b|/track|/log(s|ging)?\b|metrics|beacon|/collect|"
-    r"sentry|/rum\b|/vitals|heartbeat|/events?/batch", re.I)
+    r"sentry|/rum\b|/vitals|heartbeat|/events?/batch|"
+    r"/_next/static/|\.(css|js|mjs|map|png|jpe?g|gif|svg|webp|avif|ico|woff2?|ttf|otf)$", re.I)
 # An id segment is numeric, or a long token containing a digit (uuid, evt-Ab12..., slug gtl3o3ug).
 # Hyphenated words like "get-following-calendars" have no digit and stay literal.
 ID_SEGMENT = re.compile(r"^(\d+|(?=[A-Za-z0-9_-]*\d)[A-Za-z0-9_-]{8,})$")
+FILE_EXT = re.compile(r"^(.*?)(\.[A-Za-z0-9]{1,5})$")
 API_TYPES = {"xhr", "fetch"}
+# Words that mark login/credential flows. Matched as whole words after splitting camelCase and
+# separators, so "getLoginToken" and "/auth/email/start" match but "authors" does not.
+AUTH_WORDS = {"auth", "login", "logout", "signin", "signout", "signup", "register", "passkey", "passkeys",
+              "sudo", "2fa", "mfa", "otp", "sms", "password"}
+
+
+def words(path):
+    parts = re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", path)
+    return [w.lower() for w in re.split(r"[^A-Za-z0-9]+", parts) if w]
+
+
+def is_auth_path(path):
+    ws = words(path)
+    joined = {a + b for a, b in zip(ws, ws[1:])}  # "sign in" -> "signin"
+    return bool(AUTH_WORDS & (set(ws) | joined))
 
 
 def site_domain(url):
@@ -31,8 +48,17 @@ def is_app_api(method, url, resource_type, domain):
     return resource_type in API_TYPES or (resource_type == "document" and method != "GET")
 
 
+def normalize_segment(seg):
+    if ID_SEGMENT.match(seg):
+        return "{id}"
+    m = FILE_EXT.match(seg)  # Next.js data routes: /_next/data/<build>/e/<eventId>.json
+    if m and ID_SEGMENT.match(m.group(1)):
+        return "{id}" + m.group(2)
+    return seg
+
+
 def normalize_path(path):
-    return "/".join("{id}" if ID_SEGMENT.match(seg) else seg for seg in path.split("/"))
+    return "/".join(normalize_segment(seg) for seg in path.split("/"))
 
 
 def endpoint_key(method, url, req_body=""):

@@ -7,6 +7,7 @@ user's live session, and rewritten from the failure details until it passes.
 import asyncio
 import json
 import re
+import time
 from collections import Counter
 from urllib.parse import urlparse
 
@@ -14,14 +15,15 @@ import httpx
 
 from . import db, lessons, llm
 from .config import CODE_MODEL, WORKER_TOKEN, WORKERS
-from .endpoints import endpoint_key, is_app_api, site_domain
+from .endpoints import endpoint_key, is_app_api, is_auth_path, site_domain
+from .gateway_errors import looks_unauthenticated
 
 MAX_ATTEMPTS = 4
 LLM_CONCURRENCY = 4
 RUN_CONCURRENCY = 3
 SKIP_HEADERS = {"cookie", "user-agent", "accept-encoding", "accept-language", "priority", "content-length",
                 "host", "connection"}
-AUTH_PATH = re.compile(r"/(auth|login|logout|sign-?in|sign-?out|signup|register|passkeys?|sudo|2fa|otp)\b", re.I)
+# Login/credential flows are never turned into operations (see endpoints.is_auth_path).
 
 GEN_PROMPT = """You turn one captured web-app request into ONE granular API operation for AI agents.
 Granular means one atomic action (like `git add` or `git push`), never a multi-step workflow.
@@ -49,7 +51,8 @@ Write:
               "description": "...", "example": <value taken from the samples>}}],
   "returns": [{{"name": "...", "type": "...", "description": "..."}}]}}
 Only fields a user would choose become params (ids, search text, filters, page cursor). Constants, tracking
-values, client versions and auth tokens stay hard-coded inside the code.
+values and client versions stay hard-coded inside the code. NEVER put cookies, Authorization headers or other
+tokens in the code: runtime.request adds the user's session (cookies and auth headers) to every call.
 
 2. Then a ```python code block:
 import runtime
@@ -136,7 +139,7 @@ def collect(job_id, site):
         triggers = sorted({steps.get(r["step"], ("page load after login", ""))[0] or "page load" for r in reqs})
         out.append({"endpoint": key, "samples": samples, "triggers": triggers[:6],
                     "first_step": min(r["step"] or 0 for r in reqs),
-                    "auth": bool(AUTH_PATH.search(urlparse(reqs[0]["url"]).path))})
+                    "auth": is_auth_path(urlparse(reqs[0]["url"]).path)})
     return out
 
 
@@ -170,9 +173,12 @@ def base_headers(job_id, site):
 
 
 def session_for(job_id, site):
+    """Cookies plus any bearer-token headers the site's own requests carried (refreshed live before use)."""
+    from .auth_tokens import latest_recorded
     domain = site_domain(site)
     cookies = db.get_session(job_id) or []
-    return {"cookies": {c["name"]: c["value"] for c in cookies if c["domain"].lstrip(".").endswith(domain)}}
+    return {"cookies": {c["name"]: c["value"] for c in cookies if c["domain"].lstrip(".").endswith(domain)},
+            "headers": latest_recorded(job_id, domain)}
 
 
 def site_module(headers):
@@ -253,6 +259,7 @@ class Generator:
         self.files_common = {"_site.py": site_module(self.headers)}
         self.lessons = ""
         self.first_step = {}
+        self.token_lock, self.token_at = asyncio.Lock(), 0.0
 
     def event(self, kind, data):
         db.add_event(self.job_id, kind, data)
@@ -272,7 +279,30 @@ class Generator:
         async with self.run_sem:
             res = await run_calls(files, self.session, calls)
         results = res.get("results") or [{"ok": False, "error_code": "runner", "error": res.get("error", "")}]
+        if self.session.get("headers") and not results[0].get("ok") and looks_unauthenticated(results[0])                 and await self.refresh_token():
+            async with self.run_sem:
+                res = await run_calls(files, self.session, calls)
+            results = res.get("results") or results
         return results
+
+    async def refresh_token(self):
+        """Bearer tokens expire mid-run (Firebase: ~1h); re-read one from the job's logged-in sandbox."""
+        from .auth_tokens import capture_live, site_root
+        async with self.token_lock:
+            if time.monotonic() - self.token_at < 60:
+                return True  # another operation just refreshed it
+            job = db.get_job(self.job_id)
+            if not job or not job.get("cdp"):
+                return False
+            try:
+                headers = await capture_live(job["cdp"], site_root(self.site))
+            except Exception:
+                headers = {}
+            if headers:
+                self.session["headers"] = headers
+                self.token_at = time.monotonic()
+                return True
+            return False
 
     async def build(self, group):
         ep = group["endpoint"]
@@ -287,10 +317,15 @@ class Generator:
         prompt = GEN_PROMPT.format(site=self.site, endpoint=ep, triggers="; ".join(group["triggers"]),
                                    samples=samples, lessons=self.lessons or "(none yet)")
         db.upsert_operation(self.job_id, ep, status="generating")
-        try:
-            spec, code = await self.ask(prompt)
-        except Exception as e:
-            db.upsert_operation(self.job_id, ep, status="failed", last_result={"error": f"generation: {e}"})
+        spec = code = error = None
+        for attempt in range(2):  # one retry when the reply has no code block or the reasoning ran out
+            try:
+                spec, code = await self.ask(prompt)
+                break
+            except Exception as e:
+                error = e
+        if spec is None:
+            db.upsert_operation(self.job_id, ep, status="failed", last_result={"error": f"generation: {error}"})
             return
         name = module_name(spec.get("name"))
         if not spec.get("include", True):
@@ -364,7 +399,13 @@ class Generator:
         self.event("status", {"status": "generated", "detail": dict(counts)})
         return counts
 
-    async def run(self):
+    async def run(self, fresh=False):
+        """fresh=True discards earlier operations (e.g. after endpoint grouping changed) and regenerates from the
+        traffic recorded during exploration; no new exploration or login is needed."""
+        if fresh:
+            db.clear_operations(self.job_id)
+        if self.session.get("headers"):
+            await self.refresh_token()
         self.lessons = await asyncio.to_thread(lessons.load)
         groups = collect(self.job_id, self.site)
         self.first_step = {g["endpoint"]: g["first_step"] for g in groups}

@@ -65,14 +65,30 @@ async def run_job(job_id):
         set_status(job_id, "failed", f"{type(e).__name__}: {e}")
 
 
-async def run_generation(job_id, retry_failed=False):
+async def capture_session_auth(job, conn_id):
+    """Store bearer-token auth (headers + browser storage) on a connection, from the job's logged-in sandbox."""
+    from .auth_tokens import capture_live, site_root, storage_state
+    if not job.get("cdp"):
+        return
+    try:
+        headers = await capture_live(job["cdp"], site_root(job["site_url"]))
+        state = await storage_state(job["cdp"]) if headers else None
+    except Exception as e:
+        db.add_event(job["id"], "error", {"auth_capture": str(e)[:200]})
+        return
+    if headers:
+        db.update_connection(conn_id, auth_headers=headers, storage_state=state)
+        db.add_event(job["id"], "session_auth", {"headers": sorted(headers)})
+
+
+async def run_generation(job_id, retry_failed=False, fresh=False):
     job = db.get_job(job_id)
     set_status(job_id, "generating", "retrying failed operations" if retry_failed
                else "writing and verifying one operation per endpoint")
     llm.meter.set((job_id, "generate"))
     try:
         gen = Generator(job_id, job["site_url"])
-        counts = await (gen.retry_failed() if retry_failed else gen.run())
+        counts = await (gen.retry_failed() if retry_failed else gen.run(fresh=fresh))
         set_status(job_id, "generated", ", ".join(f"{v} {k}" for k, v in counts.items()))
     except Exception as e:
         set_status(job_id, "failed", f"generation: {type(e).__name__}: {e}")
@@ -88,6 +104,7 @@ async def run_publish(job_id, create_connection=False):
             conn_id, key = gateway.new_connection(summary["domain"], db.get_session(job_id) or [], job_id)
             db.add_event(job_id, "connection_created", {"connection_id": conn_id, "api_key": key,
                                                         "mcp_url": f"{PUBLIC_URL}/mcp/{key}"})
+            await capture_session_auth(db.get_job(job_id), conn_id)
         set_status(job_id, "published", f"{summary['operations']} operations at /specs/{summary['domain']}")
     except Exception as e:
         set_status(job_id, "failed", f"publish: {type(e).__name__}: {e}")
@@ -106,12 +123,14 @@ async def run_connect(job_id):
             cookies = await b.cookies()
         domain = site_domain(job["site_url"])
         if job["connection_id"] and db.get_connection(job["connection_id"]):
-            db.update_connection(job["connection_id"], cookies=cookies, status="active", job_id=job_id)
-            db.add_event(job_id, "connection_refreshed", {"connection_id": job["connection_id"]})
+            conn_id = job["connection_id"]
+            db.update_connection(conn_id, cookies=cookies, status="active", job_id=job_id)
+            db.add_event(job_id, "connection_refreshed", {"connection_id": conn_id})
         else:
             conn_id, key = gateway.new_connection(domain, cookies, job_id)
             db.add_event(job_id, "connection_created", {"connection_id": conn_id, "api_key": key,
                                                         "mcp_url": f"{PUBLIC_URL}/mcp/{key}"})
+        await capture_session_auth(db.get_job(job_id), conn_id)
         set_status(job_id, "connected", domain)
     except Exception as e:
         set_status(job_id, "failed", f"{type(e).__name__}: {e}")
@@ -121,8 +140,12 @@ async def run_connect(job_id):
             db.update_job(job_id, view_token=None)
 
 
-def start_generation(job_id, retry_failed=False):
-    tasks[job_id] = asyncio.create_task(run_generation(job_id, retry_failed))
+def start_generation(job_id, retry_failed=False, fresh=False, then_publish=False):
+    async def go():
+        await run_generation(job_id, retry_failed, fresh)
+        if then_publish:
+            await run_publish(job_id)
+    tasks[job_id] = asyncio.create_task(go())
 
 
 def start_publish(job_id, create_connection=False):

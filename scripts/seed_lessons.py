@@ -52,8 +52,46 @@ SEED = [
          fix=r"ID = ^(\d+|(?=[A-Za-z0-9_-]*\d)[A-Za-z0-9_-]{8,})$"),
 ]
 
+# Mistakes from the first partiful.com run (2026-09-27).
+PARTIFUL = [
+    dict(source="curated", status="approved", scope="codegen",
+         lesson="Never put Authorization headers, cookies or tokens in generated code; the runtime adds the user's "
+                "session (cookies and bearer tokens) to every call.",
+         failure="The generation prompt told the model to hard-code auth tokens. Partiful's calls carry a Firebase "
+                 "token that expires in about an hour, so hard-coded code would break and leak it.",
+         fix="Prompt: \"NEVER put cookies, Authorization headers or other tokens in the code: runtime.request adds "
+             "the user's session to every call.\""),
+    dict(source="curated", status="approved", scope="session",
+         lesson="Many apps authenticate API calls with a bearer token kept in browser storage (Firebase, Supabase), "
+                "not a cookie; capture it with the session and re-mint it from saved browser storage when it expires.",
+         failure="All 25 api.partiful.com operations failed verification: the calls reached Partiful without the "
+                 "Authorization: Bearer token its web app sends, so no rewrite could fix them.",
+         fix="Sessions = cookies + auth headers + browser storage (IndexedDB). On an auth failure the gateway opens the "
+             "site in a sandbox with that storage, reads the fresh token off the site's own request, and retries once."),
+    dict(source="curated", status="approved", scope="explore",
+         lesson="An id followed by a file extension is still an id (Next.js /_next/data/<build>/e/<id>.json), and "
+                "/_next/static or asset files are never API calls.",
+         failure="Every Partiful event page became its own endpoint, producing 10 duplicate get_event operations; "
+                 "CSS files were also treated as API calls.",
+         fix="normalize_segment: strip the extension before the id test; NOISE_PATH skips /_next/static and "
+             ".css/.js/.png/... files."),
+    dict(source="curated", status="approved", scope="explore",
+         lesson="Login endpoints often use camelCase RPC names (getLoginToken, verifyOtp); match auth words after "
+                "splitting camelCase, not only as whole path segments.",
+         failure="Partiful's SMS login call getLoginToken wasn't recognised as a login flow and was generated and "
+                 "verified as an operation.",
+         fix="is_auth_path splits camelCase and separators into words and checks auth, login, signup, otp, sms, "
+             "passkey, password, ..."),
+    dict(source="curated", status="approved", scope="generator",
+         lesson="When the model's reply has no code block or its reasoning uses up the output budget, retry once "
+                "instead of failing the endpoint.",
+         failure="9 Partiful endpoints failed at generation with \"no python code block\" or an empty completion.",
+         fix="build(): one retry on an unparseable generation; the LLM client doubles max_tokens after an empty reply."),
+]
+
 if __name__ == "__main__":
-    for s in SEED:
-        item = lessons.propose("luma.com", s["lesson"], s["failure"], s["fix"], source=s["source"],
-                               status=s["status"], scope=s["scope"], date=D)
-        print("added" if item else "exists", "-", s["lesson"][:70])
+    for site, date, items in (("luma.com", D, SEED), ("partiful.com", "2026-09-27", PARTIFUL)):
+        for s in items:
+            item = lessons.propose(site, s["lesson"], s["failure"], s["fix"], source=s["source"],
+                                   status=s["status"], scope=s["scope"], date=date)
+            print("added" if item else "exists", "-", s["lesson"][:70])

@@ -67,8 +67,8 @@ UNMARK_JS = "() => document.querySelectorAll('[data-sk-label]').forEach(e => e.r
 class SandboxBrowser:
     """A CDP connection to one sandbox's Chromium, with network recording."""
 
-    def __init__(self, job_id, cdp):
-        self.job_id, self.cdp = job_id, cdp
+    def __init__(self, job_id, cdp, record=True):
+        self.job_id, self.cdp, self.record = job_id, cdp, record
         self.step = 0
         self._pw = self.browser = self.context = None
 
@@ -76,7 +76,8 @@ class SandboxBrowser:
         self._pw = await async_playwright().start()
         self.browser = await self._pw.chromium.connect_over_cdp(f"http://{self.cdp}")
         self.context = self.browser.contexts[0]
-        self.context.on("response", self._on_response)
+        if self.record:
+            self.context.on("response", self._on_response)
         return self
 
     async def __aexit__(self, *exc):

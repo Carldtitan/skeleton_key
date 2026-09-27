@@ -196,10 +196,11 @@ def human_done(job_id: str):
 
 
 @app.post("/api/jobs/{job_id}/generate", dependencies=[Depends(admin)])
-async def generate(job_id: str, retry_failed: bool = False):
+async def generate(job_id: str, retry_failed: bool = False, fresh: bool = False, publish: bool = False):
+    """fresh=true regenerates every operation from the recorded traffic; publish=true republishes afterwards."""
     if not db.get_job(job_id):
         raise HTTPException(404)
-    jobs.start_generation(job_id, retry_failed)
+    jobs.start_generation(job_id, retry_failed, fresh, publish)
     return {"ok": True}
 
 

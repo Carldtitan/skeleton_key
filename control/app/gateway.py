@@ -5,11 +5,13 @@ stored cookies; the operation runs in a throwaway runner container on a worker, 
 never reach the caller or any LLM.
 """
 import hashlib
+import re
 import secrets
 import time
 
 from . import db
 from .endpoints import site_domain
+from .gateway_errors import looks_unauthenticated
 from .generator import run_calls
 
 
@@ -66,6 +68,35 @@ def reconnect_url(conn, base_url):
     return f"{base_url}/#/r/{token}"
 
 
+def session_of(conn):
+    """Cookies for the site plus any auth headers (bearer tokens) captured with the session."""
+    return {"cookies": {c["name"]: c["value"] for c in conn["cookies"]
+                        if c["domain"].lstrip(".").endswith(site_domain(conn["domain"]))},
+            "headers": conn.get("auth_headers") or {}}
+
+
+async def _run(site, op, session, params):
+    files = {"_site.py": site["spec"]["site_module"], f"{op['module']}.py": op["code"]}
+    res = await run_calls(files, session, [{"op": op["module"], "params": params}])
+    return res, (res.get("results") or [{}])[0]
+
+
+async def refresh_auth(conn):
+    """Mint fresh auth headers (bearer tokens expire) without a human, and store them on the connection."""
+    from . import auth_tokens
+    if not conn.get("auth_headers") and not conn.get("storage_state"):
+        return False
+    job = db.get_job(conn["job_id"]) if conn.get("job_id") else None
+    site = db.get_site(conn["domain"])
+    headers = await auth_tokens.refresh(conn, job.get("cdp") if job and job.get("view_token") else None,
+                                        auth_tokens.site_root(site["spec"]["login_url"]))
+    if headers:
+        conn["auth_headers"] = headers
+        db.update_connection(conn["id"], auth_headers=headers)
+        return True
+    return False
+
+
 async def execute(conn, op_name, params, base_url=""):
     """Run one operation for a connection. Returns (output, meta) or raises GatewayError."""
     domain = conn["domain"]
@@ -74,14 +105,11 @@ async def execute(conn, op_name, params, base_url=""):
     if conn["status"] == "expired":
         raise GatewayError("session_expired", "the site session expired; a human must log in again", 401,
                            reconnect_url=reconnect_url(conn, base_url))
-    session = {"cookies": {c["name"]: c["value"] for c in conn["cookies"]
-                           if c["domain"].lstrip(".").endswith(site_domain(domain))}}
-    module = op["module"]
-    files = {"_site.py": site["spec"]["site_module"], f"{module}.py": op["code"]}
     started = time.monotonic()
-    res = await run_calls(files, session, [{"op": module, "params": params}])
+    res, result = await _run(site, op, session_of(conn), params)
+    if not result.get("ok") and looks_unauthenticated(result) and await refresh_auth(conn):
+        res, result = await _run(site, op, session_of(conn), params)  # retry once with a fresh token
     seconds = round(time.monotonic() - started, 3)
-    result = (res.get("results") or [{}])[0]
     if result.get("ok"):
         return result.get("output"), {"seconds": seconds, "model_tokens": 0}
     code = result.get("error_code") or "upstream_error"
@@ -100,11 +128,8 @@ async def execute(conn, op_name, params, base_url=""):
 
 async def _session_alive(conn, site, probe):
     op = next(o for o in site["spec"]["operations"] if o["name"] == probe)
-    session = {"cookies": {c["name"]: c["value"] for c in conn["cookies"]
-                           if c["domain"].lstrip(".").endswith(site_domain(conn["domain"]))}}
-    res = await run_calls({"_site.py": site["spec"]["site_module"], f"{op['module']}.py": op["code"]}, session,
-                          [{"op": op["module"], "params": {}}])
-    return bool((res.get("results") or [{}])[0].get("ok"))
+    _, result = await _run(site, op, session_of(conn), {})
+    return bool(result.get("ok"))
 
 
 def probe_operation(domain):
