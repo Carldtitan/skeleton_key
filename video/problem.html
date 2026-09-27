@@ -1,0 +1,326 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Skeleton Key · the problem</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400..800&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+  :root { --oat:#f8f2e8; --cream:#fffdf9; --ink:#23150f; --ink2:#3d281f; --muted:#7a5c4b; --line:#e3d6c8;
+          --terra:#b85632; --terra-l:#e8a17b; --red:#e0604a; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--oat); }
+  #stage { position: relative; width: 1920px; height: 1080px; overflow: hidden; font-family: 'DM Sans', Arial, sans-serif;
+           color: var(--ink); background: radial-gradient(ellipse at 70% 30%, #fbf6ee 0%, #f3eadd 70%); }
+  .abs { position: absolute; }
+  #shake { position: absolute; inset: 0; }
+
+  /* terminal */
+  #term { left: 100px; top: 250px; width: 720px; height: 460px; background: #1d120d; border-radius: 22px;
+          box-shadow: 0 30px 80px rgba(35,21,15,.35); overflow: hidden; }
+  #term .bar { height: 54px; display: flex; align-items: center; gap: 10px; padding: 0 22px; background: #2d1b14; }
+  #term .bar i { width: 14px; height: 14px; border-radius: 50%; background: #5a4035; display: inline-block; }
+  #term .bar span { margin-left: 14px; color: #cbb9ad; font-size: 20px; font-weight: 600; letter-spacing: .02em; }
+  #lines { padding: 30px 30px; font-family: 'JetBrains Mono', monospace; font-size: 26px; line-height: 1.75; color: #f3e6da; }
+  #lines div { white-space: pre; }
+  .dim { color: #9c8576; } .err { color: var(--red); font-weight: 600; } .acc { color: var(--terra-l); font-weight: 600; }
+  .caret { display: inline-block; width: 13px; height: 28px; background: #f3e6da; vertical-align: -5px; margin-left: 2px; }
+
+  /* browser windows */
+  .win { background: var(--cream); border-radius: 18px; overflow: hidden; box-shadow: 0 30px 80px rgba(35,21,15,.28); }
+  .chrome { height: 56px; display: flex; align-items: center; gap: 12px; padding: 0 18px; background: #efe6da;
+            border-bottom: 1px solid var(--line); }
+  .chrome .url { flex: 1; height: 34px; border-radius: 17px; background: #fbf7f1; display: flex; align-items: center; gap: 10px;
+                 padding: 0 14px; font-size: 19px; color: var(--ink2); }
+  .chrome .url img, .chrome .url svg { width: 22px; height: 22px; border-radius: 5px; }
+  #lumaWin { left: 900px; top: 150px; width: 920px; height: 631px; }
+  #lumaWin .shot { display: block; width: 920px; height: 575px; object-fit: cover; object-position: top; }
+  #dim { left: 0; top: 56px; width: 920px; height: 575px; background: rgba(29,18,13,.62); }
+  #flash { left: 0; top: 56px; width: 920px; height: 575px; background: #fff; }
+  #lumaBig { left: 360px; top: 190px; width: 200px; height: 200px; border-radius: 44px; box-shadow: 0 20px 60px rgba(0,0,0,.4); }
+  #pill { left: 460px; top: 470px; transform: translateX(-50%); padding: 12px 28px; border-radius: 999px; background: var(--terra);
+          color: #fff6ed; font-size: 30px; font-weight: 800; white-space: nowrap; letter-spacing: .01em; }
+  .lock { position: absolute; }
+
+  /* beam */
+  #beam { left: 0; top: 0; width: 1920px; height: 1080px; pointer-events: none; overflow: visible; }
+
+  /* vision mode */
+  #meters { left: 100px; top: 120px; display: flex; gap: 16px; }
+  .meter { background: var(--cream); border: 1px solid var(--line); border-radius: 16px; padding: 12px 22px; min-width: 200px;
+           box-shadow: 0 10px 30px rgba(35,21,15,.08); }
+  .meter small { display: block; font-size: 16px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+  .meter b { display: block; font-size: 40px; font-weight: 800; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+  #cursor { left: 0; top: 0; width: 44px; height: 44px; }
+  #cursorTag { left: 36px; top: 34px; padding: 5px 12px; border-radius: 8px; background: var(--ink); color: #fff6ed; font-size: 17px;
+               font-weight: 700; white-space: nowrap; }
+  .ripple { position: absolute; width: 80px; height: 80px; margin: -40px 0 0 -40px; border-radius: 50%; border: 4px solid var(--terra); }
+  .thumb { position: absolute; width: 180px; height: 113px; border-radius: 8px; overflow: hidden; border: 3px solid var(--cream);
+           box-shadow: 0 10px 24px rgba(35,21,15,.3); background: #fff; }
+  .thumb img { width: 100%; height: 100%; object-fit: cover; object-position: top; }
+  #pileLabel { left: 104px; top: 978px; font-size: 26px; font-weight: 700; color: var(--ink2); }
+  #stamp { left: 960px; top: 520px; padding: 22px 54px; border: 8px solid var(--terra); border-radius: 22px; color: var(--terra);
+           background: rgba(255,253,249,.94); font-size: 104px; font-weight: 800; letter-spacing: -.03em; white-space: nowrap; }
+
+  /* wall */
+  #wall { left: 0; top: 0; transform-origin: 0 0; }
+  .cell { position: absolute; width: 420px; height: 268px; }
+  .cell .chrome { height: 40px; padding: 0 12px; gap: 8px; }
+  .cell .chrome .url { height: 24px; font-size: 14px; padding: 0 10px; }
+  .cell .chrome .url img, .cell .chrome .url svg { width: 16px; height: 16px; }
+  .blk { position: absolute; border-radius: 6px; }
+  .cell .body { position: absolute; left: 0; top: 40px; width: 420px; height: 228px; filter: blur(1.5px); }
+  .cell .lk { position: absolute; left: 210px; top: 172px; width: 76px; height: 76px; margin: -38px 0 0 -38px; }
+  .cell .shade { position: absolute; left: 0; top: 40px; width: 420px; height: 228px; background: rgba(29,18,13,.45); }
+  .feat .name { position: absolute; left: 0; right: 0; top: 62px; text-align: center; font-size: 34px; font-weight: 800; color: #fff6ed;
+                text-shadow: 0 2px 12px rgba(0,0,0,.45); }
+</style>
+</head>
+<body>
+<div id="stage"><div id="shake">
+
+  <!-- scenes 1 + 2 -->
+  <div id="s12" class="abs" style="inset:0">
+    <div id="meters" class="abs">
+      <div class="meter"><small>Time</small><b id="mTime">0:00</b></div>
+      <div class="meter"><small>Tokens</small><b id="mTok">0</b></div>
+      <div class="meter"><small>Cost</small><b id="mCost">$0.00</b></div>
+    </div>
+    <div id="term" class="abs">
+      <div class="bar"><i></i><i></i><i></i><span>your agent</span></div>
+      <div id="lines">
+        <div id="l1"></div>
+        <div id="l2" class="dim">  looking for a way into luma.com …</div>
+        <div id="l3" class="err">✗ No API. No MCP.</div>
+        <div id="l4" class="err">  I can't access your Luma account.</div>
+        <div id="l5" class="acc">› Fallback: vision model</div>
+        <div id="l6" class="dim">  screenshot → think → click → repeat</div>
+      </div>
+    </div>
+
+    <div id="lumaWin" class="abs win">
+      <div class="chrome"><div class="url"><img src="{{LUMA_ICON}}" alt="">luma.com/discover</div></div>
+      <img class="shot" src="{{LUMA_SHOT}}" alt="">
+      <div id="flash" class="abs"></div>
+      <div id="dim" class="abs"></div>
+      <img id="lumaBig" class="abs" src="{{LUMA_ICON}}" alt="Luma">
+      <svg id="lock1" class="lock" viewBox="0 0 100 120" width="150" height="180"></svg>
+      <div id="pill" class="abs">No API · No MCP</div>
+    </div>
+
+    <svg id="beam" class="abs" viewBox="0 0 1920 1080">
+      <defs><filter id="glow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="8" result="b"/>
+        <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
+      <path id="beamPath" d="M 822 470 C 1000 470, 1100 420, 1300 440" fill="none" stroke="#b85632" stroke-width="7"
+            stroke-linecap="round" filter="url(#glow)"/>
+      <circle id="beamHead" r="12" fill="#e8a17b" filter="url(#glow)"/>
+    </svg>
+
+    <div id="thumbs" class="abs" style="inset:0"></div>
+    <div id="ripples" class="abs" style="inset:0"></div>
+    <div id="pileLabel" class="abs"></div>
+    <div id="cursor" class="abs">
+      <svg viewBox="0 0 24 24" width="44" height="44"><path d="M3 2 L3 20 L8 15 L11.5 22 L14.5 20.6 L11 13.8 L18 13.8 Z"
+        fill="#23150f" stroke="#fffdf9" stroke-width="1.6" stroke-linejoin="round"/></svg>
+      <div id="cursorTag" class="abs">vision model</div>
+    </div>
+    <div id="stamp" class="abs">Slow. Very expensive.</div>
+  </div>
+
+  <!-- scene 3 -->
+  <div id="wall" class="abs"></div>
+
+</div></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const cl = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const P = (t, a, b) => cl((t - a) / (b - a));
+const eo = (x) => 1 - Math.pow(1 - x, 3);
+const eio = (x) => (x < .5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
+const back = (x) => { const c1 = 1.9, c3 = c1 + 1; return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2); };
+const inout = (t, a, b, c, d) => Math.min(eo(P(t, a, b)), 1 - eo(P(t, c, d)));
+const lerp = (a, b, x) => a + (b - a) * x;
+const set = (el, o, tr) => { el.style.opacity = o; if (tr !== undefined) el.style.transform = tr; };
+let seed = 7; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+
+const LOCK = `<rect x="14" y="50" width="72" height="62" rx="12" fill="#b85632"/>
+  <path d="M30 52 V36 a20 20 0 0 1 40 0 V52" fill="none" stroke="#b85632" stroke-width="11" stroke-linecap="round"/>
+  <circle cx="50" cy="78" r="8" fill="#fff6ed"/><rect x="46.5" y="80" width="7" height="16" rx="3" fill="#fff6ed"/>`;
+$("lock1").innerHTML = LOCK;
+
+/* ---- scene 2: the vision model's clicks ---- */
+const WX = 900, WY = 206;              // Luma window content origin (below its chrome)
+const S = 920 / 1440;                  // screenshot scale
+const targets = [[1060, 268], [357, 356], [760, 356], [1060, 356], [357, 466], [760, 466], [1060, 466],
+                 [357, 576], [446, 760], [712, 760], [980, 760]].map(([x, y]) => [WX + x * S, WY + y * S]);
+const CLICK0 = 8.1, STEP = 0.46;
+const clicks = targets.map((_, i) => CLICK0 + i * STEP);
+const start = [1180, 700];
+const pile = (i) => [104 + i * 58, 834 + (i % 2) * 16, (i % 3 - 1) * 5];
+const thumbs = targets.map(() => {
+  const d = document.createElement("div"); d.className = "thumb"; d.innerHTML = `<img src="{{LUMA_SHOT}}" alt="">`;
+  $("thumbs").appendChild(d); return d;
+});
+const ripples = targets.map(() => { const r = document.createElement("div"); r.className = "ripple"; $("ripples").appendChild(r); return r; });
+
+function cursorAt(t) {
+  const pts = [start, ...targets];
+  for (let i = 0; i < targets.length; i++) {
+    const t1 = clicks[i], t0 = t1 - STEP * 0.8;
+    if (t <= t1) {
+      const from = pts[i], to = pts[i + 1], x = eio(P(t, t0, t1));
+      return [lerp(from[0], to[0], x), lerp(from[1], to[1], x)];
+    }
+  }
+  return targets[targets.length - 1];
+}
+
+/* ---- scene 3: the wall ---- */
+const COLS = 11, ROWS = 9, CW = 420, CH = 268, G = 40;
+const WW = COLS * (CW + G) - G, WH = ROWS * (CH + G) - G;
+const FEAT = { "4,4": "luma", "4,5": "market", "4,6": "bank" };
+const PAL = ["#e9dccd", "#dfe7ee", "#e6e0ee", "#e2ece2", "#f1e1d6", "#ece6d8"];
+const BANK_ICON = `<svg viewBox="0 0 24 24"><path d="M12 2 L22 7 V9 H2 V7 Z M4 10 H7 V18 H4 Z M10.5 10 H13.5 V18 H10.5 Z M17 10 H20 V18 H17 Z M2 19 H22 V22 H2 Z" fill="#2f5d8a"/></svg>`;
+const cells = [];
+for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+  const kind = FEAT[`${r},${c}`] || "generic";
+  const el = document.createElement("div");
+  el.className = "cell win" + (kind !== "generic" ? " feat" : "");
+  el.style.left = c * (CW + G) + "px"; el.style.top = r * (CH + G) + "px";
+  let url, body = "";
+  if (kind === "luma") {
+    url = `<img src="{{LUMA_ICON}}" alt="">luma.com`;
+    body = `<img src="{{LUMA_SHOT}}" alt="" style="width:420px;height:228px;object-fit:cover;object-position:top">`;
+  } else if (kind === "market") {
+    url = `<img src="{{MARKET_ICON}}" alt="">facebook.com/marketplace`;
+    for (let i = 0; i < 8; i++) {
+      const x = 14 + (i % 4) * 101, y = 12 + Math.floor(i / 4) * 108;
+      body += `<div class="blk" style="left:${x}px;top:${y}px;width:92px;height:70px;background:${PAL[i % 6]}"></div>
+               <div class="blk" style="left:${x}px;top:${y + 76}px;width:56px;height:10px;background:#cdbfb1"></div>`;
+    }
+  } else if (kind === "bank") {
+    url = `${BANK_ICON}yourbank.com`;
+    body = `<div class="blk" style="left:18px;top:16px;width:384px;height:84px;background:#2f5d8a"></div>
+            <div class="blk" style="left:36px;top:34px;width:120px;height:12px;background:#9fb9d3"></div>
+            <div class="blk" style="left:36px;top:58px;width:200px;height:24px;background:#dfeaf5"></div>`;
+    for (let i = 0; i < 4; i++) body += `<div class="blk" style="left:18px;top:${114 + i * 27}px;width:384px;height:18px;background:#e8e2d8"></div>`;
+  } else {
+    url = `<span style="width:16px;height:16px;border-radius:4px;background:#d6cabd;display:inline-block"></span>
+           <span style="width:${60 + rnd() * 90}px;height:9px;border-radius:5px;background:#dcd1c5;display:inline-block"></span>`;
+    body = `<div class="blk" style="left:16px;top:14px;width:${140 + rnd() * 200}px;height:22px;background:#d9ccbe"></div>`;
+    const n = 3 + Math.floor(rnd() * 3);
+    for (let i = 0; i < n; i++) {
+      body += `<div class="blk" style="left:${16 + (i % 3) * 132}px;top:${54 + Math.floor(i / 3) * 86}px;width:122px;height:76px;
+               background:${PAL[Math.floor(rnd() * 6)]}"></div>`;
+    }
+  }
+  el.innerHTML = `<div class="chrome"><div class="url">${url}</div></div><div class="body">${body}</div>
+    <div class="shade"></div><svg class="lk" viewBox="0 0 100 120">${LOCK}</svg>` +
+    (kind === "luma" ? `<div class="name">Luma</div>` : kind === "market" ? `<div class="name">Facebook Marketplace</div>`
+      : kind === "bank" ? `<div class="name">Your bank</div>` : "");
+  $("wall").appendChild(el);
+  const dist = Math.hypot(c - 5, (r - 4) * 1.4);
+  const lockAt = kind === "luma" ? 14.55 : kind === "market" ? 15.25 : kind === "bank" ? 15.95 : 16.9 + dist * 0.2 + rnd() * 0.15;
+  cells.push({ el, kind, lockAt, lk: el.querySelector(".lk"), shade: el.querySelector(".shade") });
+}
+
+/* ---- the timeline: every frame is a pure function of t ---- */
+function seek(t) {
+  // camera shake on each slam
+  const slams = [4.25, 14.55, 15.25, 15.95];
+  let dx = 0, dy = 0;
+  for (const s of slams) { const k = 1 - P(t, s, s + 0.4); if (t >= s && k > 0) { dx += 12 * k * Math.sin((t - s) * 95); dy += 6 * k * Math.cos((t - s) * 80); } }
+  const st = 12.95; if (t >= st) { const k = 1 - P(t, st, st + 0.3); dx += 8 * k * Math.sin((t - st) * 95); }
+  $("shake").style.transform = `translate(${dx}px, ${dy}px)`;
+
+  /* scenes 1-2 */
+  set($("s12"), 1 - eo(P(t, 14.0, 14.45)));
+  set($("term"), eo(P(t, 0, 0.35)), `translateY(${(1 - eo(P(t, 0, 0.5))) * 30}px)`);
+  set($("lumaWin"), eo(P(t, 0.25, 0.7)), `translateY(${(1 - eo(P(t, 0.25, 0.8))) * 30}px)`);
+
+  const cmd = "RSVP me to Friday's AI meetup on Luma";
+  const n = Math.round(cmd.length * P(t, 0.55, 2.2));
+  const caretOn = t < 2.45 && (Math.floor(t * 2.4) % 2 === 0 || t < 2.2);
+  $("l1").innerHTML = `<span class="acc">›</span> ${cmd.slice(0, n).replace(/'/g, "&#39;")}${caretOn ? '<span class="caret"></span>' : ""}`;
+  set($("l2"), P(t, 2.45, 2.7));
+  set($("l3"), P(t, 4.45, 4.55));
+  set($("l4"), P(t, 4.9, 5.1));
+  set($("l5"), P(t, 7.15, 7.35));
+  set($("l6"), P(t, 7.6, 7.8));
+
+  // beam from the agent to Luma
+  const path = $("beamPath"), L = path.getTotalLength(), bp = eio(P(t, 2.7, 4.2));
+  path.style.strokeDasharray = L; path.style.strokeDashoffset = L * (1 - bp);
+  const bo = P(t, 2.7, 2.8) * (1 - P(t, 5.4, 6.0));
+  path.style.opacity = bo;
+  const hp = path.getPointAtLength(L * bp); const head = $("beamHead");
+  head.setAttribute("cx", hp.x); head.setAttribute("cy", hp.y); head.style.opacity = bp < 1 ? bo : 0;
+
+  // the lock slams onto Luma
+  set($("dim"), 0.9 * inout(t, 3.9, 4.25, 6.9, 7.3));
+  set($("lumaBig"), inout(t, 3.9, 4.2, 6.9, 7.3), `scale(${0.8 + 0.2 * eo(P(t, 3.9, 4.25))})`);
+  const lp = P(t, 4.1, 4.3);
+  $("lock1").style.left = "475px"; $("lock1").style.top = "270px";
+  set($("lock1"), (t >= 4.1 ? 1 : 0) * (1 - eo(P(t, 6.9, 7.3))), `scale(${lerp(2.6, 1, eo(lp))})`);
+  set($("pill"), P(t, 4.5, 4.7) * (1 - eo(P(t, 6.9, 7.3))), `translateX(-50%) scale(${0.85 + 0.15 * back(P(t, 4.5, 4.85))})`);
+
+  // vision mode: meters, cursor, clicks, screenshots
+  set($("meters"), eo(P(t, 7.35, 7.8)), `translateY(${(1 - eo(P(t, 7.35, 7.9))) * -20}px)`);
+  const vp = eio(P(t, 7.8, 13.3));
+  const secs = Math.round(31 * vp);
+  $("mTime").textContent = `0:${String(secs).padStart(2, "0")}`;
+  $("mTok").textContent = Math.round(21600 * vp).toLocaleString("en-US");
+  $("mCost").textContent = `$${(0.17 * vp).toFixed(2)}`;
+  const hot = vp > 0.55 ? "#b85632" : "#23150f";
+  $("mTime").style.color = hot; $("mTok").style.color = hot; $("mCost").style.color = hot;
+
+  const [cx, cy] = cursorAt(t);
+  $("cursor").style.left = cx - 6 + "px"; $("cursor").style.top = cy - 4 + "px";
+  set($("cursor"), P(t, 7.6, 7.9) * (1 - P(t, 13.3, 13.6)));
+
+  let flash = 0, shots = 0;
+  clicks.forEach((c, i) => {
+    flash = Math.max(flash, cl(1 - Math.abs(t - c) / 0.13) * 0.75);
+    if (t >= c) shots++;
+    const r = ripples[i], rp = P(t, c, c + 0.4);
+    r.style.left = targets[i][0] + "px"; r.style.top = targets[i][1] + "px";
+    set(r, t >= c ? (1 - rp) : 0, `scale(${0.3 + rp * 1.2})`);
+    const th = thumbs[i], fp = eo(P(t, c + 0.05, c + 0.55)), [px, py, rot] = pile(i);
+    const fx = lerp(targets[i][0] - 90, px, fp), fy = lerp(targets[i][1] - 56, py, fp);
+    th.style.left = fx + "px"; th.style.top = fy + "px";
+    set(th, t >= c + 0.05 ? 1 : 0, `rotate(${rot * fp}deg) scale(${lerp(0.35, 1, fp)})`);
+  });
+  set($("flash"), flash);
+  $("pileLabel").textContent = shots ? `${shots} screenshot${shots > 1 ? "s" : ""} sent to the model` : "";
+
+  set($("stamp"), P(t, 12.95, 13.05), `translate(-50%, -50%) rotate(-5deg) scale(${lerp(1.9, 1, eo(P(t, 12.95, 13.2)))})`);
+
+  /* scene 3: the wall */
+  const wo = eo(P(t, 14.0, 14.45));
+  const s = lerp(1.18, 0.345, eio(P(t, 16.6, 18.6)));
+  // keep the featured row centred while zooming out
+  const fx = (4 * (CW + G) + (3 * CW + 2 * G) / 2), fy = 4 * (CH + G) + CH / 2;
+  const tx = 960 - fx * s, ty = lerp(500, 540, eio(P(t, 16.6, 18.6))) - fy * s;
+  $("wall").style.opacity = wo;
+  $("wall").style.transform = `translate(${tx}px, ${ty}px) scale(${s})`;
+  for (const c of cells) {
+    const k = P(t, c.lockAt, c.lockAt + 0.22);
+    const on = t >= c.lockAt;
+    set(c.lk, on ? 1 : 0, `scale(${lerp(c.kind === "generic" ? 1.8 : 2.6, 1, eo(k))})`);
+    set(c.shade, on ? 0.9 * eo(P(t, c.lockAt, c.lockAt + 0.2)) : 0);
+    const nm = c.el.querySelector(".name");
+    if (nm) set(nm, P(t, c.lockAt - 0.3, c.lockAt));
+  }
+}
+window.seek = seek;
+window.DURATION = 19;
+seek(0);
+// Live preview when opened directly: ?play plays the timeline in real time.
+if (location.search.includes("play")) {
+  const t0 = performance.now();
+  const tick = () => { const t = (performance.now() - t0) / 1000; seek(t % (DURATION + 1)); requestAnimationFrame(tick); };
+  document.fonts.ready.then(() => requestAnimationFrame(tick));
+}
+</script>
+</body>
+</html>

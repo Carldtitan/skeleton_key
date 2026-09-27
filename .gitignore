@@ -8,3 +8,4 @@ __pycache__/
 .mcp.json
 W&B hack/
 bench/
+video/build/
