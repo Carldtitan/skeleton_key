@@ -532,7 +532,8 @@ function Race({ raceId, overview }) {
   return html`
     <${PageHeader} eyebrow="Race" title="Same task, four ways">
       <${Help}><ol><li>Pick a task and press Run.</li><li>All lanes act as the same logged-in user.</li>
-        <li>✓ / ✗ is checked against the site's real data.</li></ol><//>
+        <li>✓ / ✗ is checked against the site's real data.</li></ol>
+        <p>Browser lanes send the model a screenshot every step. Skeleton Key lanes use the same model with no images.</p><//>
     <//>
     <form class="card race-form" onSubmit=${run}>
       <div><label class="field-label" for="rsite">Site</label>
@@ -575,6 +576,9 @@ function RaceView({ id, frontier, open, onTask }) {
         const verdict = r && !r.pending ? (r.correct === true ? ["good", "✓"] : r.correct === false ? ["bad", "✗"] : ["", "?"]) : ["", "…"];
         return html`<div class="lane ${kind === "Skeleton Key" ? "ours" : ""}">
           <h3>${shortModel(model)} · ${kind}</h3>
+          ${kind === "Skeleton Key"
+            ? html`<span class="lane-kind text">No vision · text only, calls the API (Skeleton Key)</span>`
+            : html`<span class="lane-kind vision">Vision · sees a screenshot every step</span>`}
           ${live ? html`<${Frame} url=${c.live_url} />`
             : html`<div class="log">${c.steps.map((s) => html`<div>${s.step}. ${s.action}${s.thought
                 ? html` <span class="res">${s.thought}</span>` : ""}</div>`)}</div>`}

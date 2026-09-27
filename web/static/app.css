@@ -348,3 +348,9 @@ a.signout { display: grid; place-items: center; }
 .linkish:hover { color: var(--text); }
 .sidebar-bottom { display: grid; gap: 8px; }
 .sidebar-bottom .muted { color: rgba(255, 246, 237, .6); font-size: 12px; letter-spacing: .04em; text-transform: uppercase; }
+
+/* race: what each lane's model gets */
+.lane-kind { display: inline-flex; align-items: center; margin-top: -6px; padding: 4px 10px; border-radius: 999px;
+  font-size: 12px; font-weight: 700; width: fit-content; }
+.lane-kind.vision { color: var(--brown-700); background: var(--oat-100); }
+.lane-kind.text { color: #fff6ed; background: var(--terracotta); }

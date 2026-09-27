@@ -160,8 +160,18 @@ async def chat_tools(model, messages, tools, max_tokens=4000):
     body = {"model": model, "messages": messages, "tools": tools, "max_tokens": max_tokens, "temperature": 0.2}
     started = time.monotonic()
     async with httpx.AsyncClient(timeout=180) as client:
-        r = await client.post(f"{INFERENCE_URL}/chat/completions", json=body,
-                              headers={"Authorization": f"Bearer {INFERENCE_KEY}"})
+        for attempt in range(3):  # same rule as chat(): retry transient 5xx / 429 / network errors
+            try:
+                r = await client.post(f"{INFERENCE_URL}/chat/completions", json=body,
+                                      headers={"Authorization": f"Bearer {INFERENCE_KEY}"})
+                if (r.status_code >= 500 or r.status_code == 429) and attempt < 2:
+                    await asyncio.sleep(1 + attempt)
+                    continue
+                break
+            except httpx.TransportError:
+                if attempt == 2:
+                    raise
+                await asyncio.sleep(1 + attempt)
     r.raise_for_status()
     data = r.json()
     await _record(model, data.get("usage", {}), time.monotonic() - started)
