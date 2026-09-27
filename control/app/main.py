@@ -10,7 +10,8 @@ import zipfile
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from pydantic import BaseModel
 
@@ -536,3 +537,23 @@ async def call_operation(domain: str, operation: str, request: Request):
         return JSONResponse(output, headers={"X-SK-Seconds": str(meta["seconds"])})
     except gateway.GatewayError as e:
         return JSONResponse({"error": e.code, "message": e.message, **e.extra}, status_code=e.status)
+
+
+# --- The dashboard itself: served from this Vultr VM (Vercel only forwards the public domain here) ---------
+WEB = __import__("pathlib").Path(__file__).with_name("web")
+NO_CACHE = {"Cache-Control": "no-cache"}
+
+
+class _Static(StaticFiles):
+    async def get_response(self, path, scope):
+        resp = await super().get_response(path, scope)
+        resp.headers.update(NO_CACHE)  # always revalidate, so a deploy shows up on the next reload
+        return resp
+
+
+app.mount("/static", _Static(directory=WEB / "static"), name="static")
+
+
+@app.get("/", include_in_schema=False)
+def dashboard():
+    return FileResponse(WEB / "index.html", headers=NO_CACHE)
