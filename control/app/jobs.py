@@ -113,8 +113,8 @@ async def run_publish(job_id, create_connection=False):
 async def run_connect(job_id):
     """Login-only job: capture a fresh session (possibly a different account) for a new or existing connection.
 
-    Cookie-only sites: the sandbox is dropped afterwards. Bearer-token sites (e.g. Firebase): the logged-in
-    sandbox is kept as the connection's session keeper, so expiring tokens can be re-minted without a human.
+    The logged-in sandbox is kept as the connection's session keeper, so expiring cookies and tokens can be
+    refreshed without a human; the previous keeper is retired.
     """
     job = db.get_job(job_id)
     sb, keep = None, False
@@ -138,8 +138,9 @@ async def run_connect(job_id):
             db.add_event(job_id, "connection_created", {"connection_id": conn_id, "api_key": key,
                                                         "mcp_url": f"{PUBLIC_URL}/mcp/{key}"})
         await capture_session_auth(db.get_job(job_id), conn_id)
-        keep = bool(db.get_connection(conn_id).get("auth_headers"))
-        if keep and previous and previous.get("job_id"):
+        # Keep the logged-in sandbox as the connection's session keeper: sites renew cookies and tokens there.
+        keep = True
+        if previous and previous.get("job_id") and previous["job_id"] != job_id:
             await retire_keeper(previous["job_id"])  # the old session keeper is no longer needed
         set_status(job_id, "connected", domain)
     except Exception as e:

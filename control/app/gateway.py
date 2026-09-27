@@ -82,18 +82,27 @@ async def _run(site, op, session, params):
 
 
 async def refresh_auth(conn):
-    """Mint fresh auth headers (bearer tokens expire) without a human, and store them on the connection."""
+    """Refresh a connection's session without a human: re-read cookies and auth headers from its live logged-in
+    sandbox (sites renew short-lived cookies and tokens there), else re-mint a token from saved browser storage."""
     from . import auth_tokens
-    if not conn.get("auth_headers") and not conn.get("storage_state"):
-        return False
     job = db.get_job(conn["job_id"]) if conn.get("job_id") else None
     site = db.get_site(conn["domain"])
-    headers = await auth_tokens.refresh(conn, job.get("cdp") if job and job.get("view_token") else None,
-                                        auth_tokens.site_root(site["spec"]["login_url"]))
-    if headers:
-        conn["auth_headers"] = headers
-        db.update_connection(conn["id"], auth_headers=headers)
-        return True
+    root = auth_tokens.site_root(site["spec"]["login_url"])
+    if job and job.get("cdp") and job.get("view_token"):  # the sandbox is still alive
+        try:
+            cookies, headers = await auth_tokens.capture_session(job["cdp"], root)
+        except Exception:
+            cookies, headers = None, {}
+        if cookies:
+            conn["cookies"], conn["auth_headers"] = cookies, headers or conn.get("auth_headers") or {}
+            db.update_connection(conn["id"], cookies=cookies, auth_headers=conn["auth_headers"])
+            return True
+    if conn.get("auth_headers") or conn.get("storage_state"):
+        headers = await auth_tokens.refresh(conn, None, root)
+        if headers:
+            conn["auth_headers"] = headers
+            db.update_connection(conn["id"], auth_headers=headers)
+            return True
     return False
 
 

@@ -279,30 +279,34 @@ class Generator:
         async with self.run_sem:
             res = await run_calls(files, self.session, calls)
         results = res.get("results") or [{"ok": False, "error_code": "runner", "error": res.get("error", "")}]
-        if self.session.get("headers") and not results[0].get("ok") and looks_unauthenticated(results[0])                 and await self.refresh_token():
+        if not results[0].get("ok") and looks_unauthenticated(results[0])                 and await self.refresh_token():
             async with self.run_sem:
                 res = await run_calls(files, self.session, calls)
             results = res.get("results") or results
         return results
 
     async def refresh_token(self):
-        """Bearer tokens expire mid-run (Firebase: ~1h); re-read one from the job's logged-in sandbox."""
-        from .auth_tokens import capture_live, site_root
+        """Sessions go stale mid-run (Firebase tokens ~1h, Clerk cookies ~1 min); re-read cookies and auth
+        headers from the job's logged-in sandbox."""
+        from .auth_tokens import capture_session, site_root
         async with self.token_lock:
-            if time.monotonic() - self.token_at < 60:
+            if time.monotonic() - self.token_at < 20:
                 return True  # another operation just refreshed it
             job = db.get_job(self.job_id)
             if not job or not job.get("cdp"):
                 return False
             try:
-                headers = await capture_live(job["cdp"], site_root(self.site))
+                cookies, headers = await capture_session(job["cdp"], site_root(self.site))
             except Exception:
-                headers = {}
+                return False
+            domain = site_domain(self.site)
+            if cookies:
+                self.session["cookies"] = {c["name"]: c["value"] for c in cookies
+                                           if c["domain"].lstrip(".").endswith(domain)}
             if headers:
                 self.session["headers"] = headers
-                self.token_at = time.monotonic()
-                return True
-            return False
+            self.token_at = time.monotonic()
+            return bool(cookies or headers)
 
     async def build(self, group):
         ep = group["endpoint"]
@@ -404,8 +408,7 @@ class Generator:
         traffic recorded during exploration; no new exploration or login is needed."""
         if fresh:
             db.clear_operations(self.job_id)
-        if self.session.get("headers"):
-            await self.refresh_token()
+        await self.refresh_token()  # start verification with the live browser's current session
         self.lessons = await asyncio.to_thread(lessons.load)
         groups = collect(self.job_id, self.site)
         self.first_step = {g["endpoint"]: g["first_step"] for g in groups}

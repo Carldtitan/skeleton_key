@@ -71,6 +71,20 @@ async def capture_live(cdp, url):
             await page.close()
 
 
+async def capture_session(cdp, url):
+    """Everything the live logged-in browser currently authenticates with: its cookies (some sites renew a
+    short-lived session cookie every minute, e.g. Clerk) and any auth headers its requests carry."""
+    domain = site_domain(url)
+    async with SandboxBrowser("auth", cdp, record=False) as b:
+        page = await b.context.new_page()
+        try:
+            headers = await _listen(b.context, page, url, domain, 8)
+            cookies = await b.context.cookies()
+        finally:
+            await page.close()
+    return cookies, headers
+
+
 async def storage_state(cdp):
     """Cookies + localStorage + IndexedDB of the logged-in sandbox, to re-mint tokens later."""
     async with SandboxBrowser("auth", cdp, record=False) as b:
