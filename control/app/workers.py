@@ -6,16 +6,21 @@ from .config import WORKER_TOKEN, WORKERS
 HEADERS = {"Authorization": f"Bearer {WORKER_TOKEN}"}
 
 
+# A browser that just started hasn't used its memory yet, so count what each sandbox will take.
+SANDBOX_MB = 700
+
+
 async def pick_worker():
-    best, best_free = None, -1
+    best, best_free = None, None
     async with httpx.AsyncClient(timeout=5) as client:
         for w in WORKERS:
             try:
                 h = (await client.get(f"http://{w}/health")).json()
             except httpx.HTTPError:
                 continue
-            if h["accepting"] and h["free_mb"] > best_free:
-                best, best_free = w, h["free_mb"]
+            free = h["free_mb"] - h["sandboxes"] * SANDBOX_MB
+            if h["accepting"] and (best_free is None or free > best_free):
+                best, best_free = w, free
     if not best:
         raise RuntimeError("no worker has capacity")
     return best

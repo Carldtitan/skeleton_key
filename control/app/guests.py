@@ -79,6 +79,10 @@ async def end_connection(conn):
 
 
 async def end_guest(guest_id):
+    from .jobs import stop_job  # jobs imports this module
+    for j in db.list_jobs():  # a login still in progress holds a browser too
+        if j.get("owner") == guest_id and j.get("kind") == "connect" and j["status"] in ("starting", "needs_human"):
+            await stop_job(j["id"])
     for c in db.guest_connections(guest_id):
         if c["status"] != "ended":
             await end_connection(c)

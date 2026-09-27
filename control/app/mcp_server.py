@@ -84,8 +84,8 @@ async def handle(msg, conn, base_url):
 async def mcp_post(api_key: str, request: Request):
     try:
         conn = gateway.connection_for_key(api_key)
-    except gateway.GatewayError:
-        return JSONResponse(rpc_error(None, -32001, "unknown API key"), status_code=401)
+    except gateway.GatewayError as e:
+        return JSONResponse(rpc_error(None, -32001, e.message), status_code=401)
     base_url = str(request.base_url).rstrip("/").replace("http://", "https://")
     try:
         body = await request.json()
