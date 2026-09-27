@@ -2,7 +2,7 @@
 
 **Any web app. Now an API.** Skeleton Key gives your agent a way into the websites you use every day, even the ones that have no API.
 
-**Live:** https://skeletonkey-api.vercel.app · continue as a guest, connect your own account and plug it into your agent.
+**Live:** https://45-76-254-85.sslip.io · continue as a guest, connect your own account and plug it into your agent.
 
 ---
 
@@ -66,19 +66,19 @@ Autonomous agents run untrusted code and drive real accounts, so every run is bo
 
 ### Try it as a guest (no account)
 
-1. Open https://skeletonkey-api.vercel.app and press **Continue as guest** (4 guest seats at a time).
+1. Open https://45-76-254-85.sslip.io and press **Continue as guest** (4 guest seats at a time).
 2. Open a site (**Sites**), press **Connect your ... account**, log in inside the live browser and press **Done**.
 3. Copy your connection into your agent:
 
 ```bash
 # Claude Code
-claude mcp add --transport http luma https://skeletonkey-api.vercel.app/mcp/<your-key>
+claude mcp add --transport http luma https://45-76-254-85.sslip.io/mcp/<your-key>
 
 # Codex
-codex mcp add luma --url https://skeletonkey-api.vercel.app/mcp/<your-key>
+codex mcp add luma --url https://45-76-254-85.sslip.io/mcp/<your-key>
 
 # Any HTTP client
-curl -X POST https://skeletonkey-api.vercel.app/v1/luma.com/list_my_events \
+curl -X POST https://45-76-254-85.sslip.io/v1/luma.com/list_my_events \
   -H "Authorization: Bearer <your-key>" -H "Content-Type: application/json" -d '{"period":"future"}'
 ```
 
@@ -88,9 +88,9 @@ Guest connections last 6 hours; after that the browser is destroyed and the key 
 
 ### Public docs
 
-- OpenAPI spec: `https://skeletonkey-api.vercel.app/specs/<domain>/openapi.json`
-- Python code: `https://skeletonkey-api.vercel.app/specs/<domain>/download.zip`
-- What the generator has learned: https://skeletonkey-api.vercel.app/#/skills
+- OpenAPI spec: `https://45-76-254-85.sslip.io/specs/<domain>/openapi.json`
+- Python code: `https://45-76-254-85.sslip.io/specs/<domain>/download.zip`
+- What the generator has learned: https://45-76-254-85.sslip.io/#/skills
 
 ### Run your own
 
