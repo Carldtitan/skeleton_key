@@ -299,3 +299,43 @@ pre.code { margin: 0; padding: 14px 16px; border-radius: var(--radius-md); backg
 .gate-art .out span { color: #cdb8ab; }
 .gate-center { max-width: 520px; margin: 14vh auto; text-align: center; }
 .gate-center h1 { font-size: 40px; }
+
+/* ---------- page lede ---------- */
+.page-header .lede { max-width: 62ch; margin: 12px 0 0; color: var(--text-quiet); font-size: 17px; line-height: 1.5; }
+
+/* ---------- sites (horizontal rows) ---------- */
+.site-rows { display: grid; gap: 14px; }
+.site-row { display: grid; grid-template-columns: 56px minmax(160px, 1fr) minmax(0, 2.4fr) auto; align-items: center; gap: 22px;
+            padding: 20px 22px; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--ivory);
+            box-shadow: var(--shadow-card); }
+.site-row .tile { width: 56px; height: 56px; display: grid; place-items: center; border-radius: 15px; background: var(--espresso-900);
+                  color: var(--terracotta-light); font-family: var(--font-display); font-size: 24px; font-weight: 760; }
+.site-row .who { display: grid; gap: 2px; min-width: 0; }
+.site-row .who .title { font-family: var(--font-display); font-size: 22px; font-weight: 700; letter-spacing: -.025em; }
+.site-row .who .title:hover { color: var(--terracotta-dark); }
+.site-row .who .domain { font-family: var(--font-mono); font-size: 12px; color: var(--text-muted); }
+.site-row .facts { display: flex; flex-wrap: wrap; gap: 14px 30px; margin: 0; }
+.site-row .facts div { display: grid; gap: 4px; }
+.site-row .facts dt { color: var(--text-muted); font-size: 11px; font-weight: 740; letter-spacing: .07em; text-transform: uppercase; }
+.site-row .facts dd { margin: 0; font-size: 16px; font-weight: 720; font-variant-numeric: tabular-nums; display: flex; align-items: center; gap: 8px; }
+.site-row .facts dd small { color: var(--text-muted); font-size: 12px; font-weight: 600; }
+@media (max-width: 1000px) { .site-row { grid-template-columns: 56px minmax(0, 1fr); } .site-row .facts, .site-row .acts { grid-column: 1 / -1; } }
+
+/* ---------- skills (lesson timeline) ---------- */
+.lessons { list-style: none; margin: 34px 0 0; padding: 0; position: relative; display: grid; gap: 14px; }
+.lessons::before { content: ""; position: absolute; top: 24px; bottom: 24px; left: 27px; width: 1px; background: var(--brown-300); }
+.lesson { position: relative; display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 16px; align-items: start; }
+.lesson-n { z-index: 1; width: 56px; height: 56px; display: grid; place-items: center; border-radius: 50%; background: var(--espresso-900);
+            color: var(--terracotta-light); font-family: var(--font-mono); font-size: 15px; font-weight: 700; box-shadow: 0 0 0 5px var(--oat-100); }
+.lesson-body { display: grid; gap: 10px; padding: 18px 20px; border: 1px solid var(--line); border-radius: var(--radius-lg);
+               background: var(--ivory); box-shadow: var(--shadow-card); min-width: 0; }
+.lesson-text { margin: 0; font-size: 17px; font-weight: 640; line-height: 1.45; letter-spacing: -.01em; }
+.lesson-body details summary { cursor: pointer; color: var(--terracotta-dark); font-size: 13px; font-weight: 700; }
+.lesson-part { display: grid; gap: 6px; margin-top: 12px; }
+.lesson-part p { margin: 0; color: var(--text-quiet); font-size: 14px; }
+.lesson-part pre.code { max-height: 220px; }
+.tag { font-size: 11px; font-weight: 740; letter-spacing: .05em; text-transform: uppercase; padding: 4px 9px; border-radius: 999px;
+       background: #ece2d6; color: var(--brown-700); }
+.tag.curated { background: #efe0d4; color: var(--terracotta-dark); }
+.tag.auto { background: #e4ece6; color: #2f674c; }
+a.signout { display: grid; place-items: center; }

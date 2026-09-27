@@ -9,7 +9,8 @@ async function api(path, opts = {}) {
     ...opts,
     body: opts.body ? JSON.stringify(opts.body) : undefined,
   });
-  if (res.status === 401 && !location.hash.startsWith("#/r/") && !location.hash.startsWith("#/login")) {
+  const publicPage = ["#/r/", "#/login", "#/skills"].some((p) => location.hash.startsWith(p));
+  if (res.status === 401 && !publicPage) {
     location.hash = "#/login?next=" + encodeURIComponent(location.hash.slice(1) || "/");
     throw new Error("login required");
   }
@@ -68,6 +69,10 @@ const KeyIcon = () => html`<svg viewBox="0 0 24 24" fill="none" stroke="currentC
   <circle cx="7.5" cy="15.5" r="4.5"/><path d="M10.7 12.3 20 3M16 7l3 3M14 9l2 2"/></svg>`;
 const HomeIcon = () => html`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
   <path d="M3 10.5 12 3l9 7.5V21a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1z"/></svg>`;
+const SitesIcon = () => html`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+  <rect x="3" y="4" width="18" height="6" rx="2"/><rect x="3" y="14" width="18" height="6" rx="2"/></svg>`;
+const SkillsIcon = () => html`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+  <path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 17l.8 2.2L22 20l-2.2.8L19 23l-.8-2.2L16 20l2.2-.8z"/></svg>`;
 const RaceIcon = () => html`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
   <path d="M3 12h4l3-8 4 16 3-8h4"/></svg>`;
 
@@ -117,9 +122,10 @@ function Handoff({ message, onDone }) {
     <button class="button primary" onClick=${onDone}>Done</button></div>`;
 }
 
-function PageHeader({ eyebrow, title, mono, children }) {
+function PageHeader({ eyebrow, title, mono, lede, children }) {
   return html`<header class="page-header">
-    <div><span class="eyebrow">${eyebrow}</span><h1 class=${mono ? "mono" : ""}>${title}</h1></div>
+    <div><span class="eyebrow">${eyebrow}</span><h1 class=${mono ? "mono" : ""}>${title}</h1>
+      ${lede && html`<p class="lede">${lede}</p>`}</div>
     <div class="actions">${children}</div>
   </header>`;
 }
@@ -184,7 +190,8 @@ function Home({ overview }) {
   };
   const sites = overview?.sites || [], running = overview?.running || [];
   return html`
-    <${PageHeader} eyebrow="Home" title="Generate an API">
+    <${PageHeader} eyebrow="Home" title="Generator"
+        lede="Point it at a web app, log in once, get a tested API your agents can use.">
       <${Help}><ol><li>Paste the web app's address.</li><li>Press Generate.</li>
         <li>Log in when the browser asks, then press Done.</li></ol><//>
     <//>
@@ -194,7 +201,7 @@ function Home({ overview }) {
       <button class="button primary large" disabled=${busy}>Generate</button>
     </form>
     <section class="section">
-      <${SectionHeading} title="Sites" count=${sites.length + running.length} />
+      <${SectionHeading} title="Connected apps" count=${sites.length + running.length} />
       <div class="sites">
         ${sites.map((s) => html`<a class="site-card" href=${`#/site/${s.domain}`}>
           <span class="title">${s.title}</span><span class="domain">${s.domain}</span>
@@ -203,8 +210,74 @@ function Home({ overview }) {
           <span class="title">${j.domain.split(".")[0]}</span><span class="domain">${j.domain}</span>
           <span class="foot"><span class="n">${j.status}</span><${Status} state="busy" /></span></a>`)}
       </div>
-      ${overview && !sites.length && !running.length && html`<div class="empty">No sites yet</div>`}
+      ${overview && !sites.length && !running.length && html`<div class="empty">No apps yet</div>`}
     </section>`;
+}
+
+/* ---------- sites ---------- */
+
+function Sites({ overview }) {
+  const sites = overview?.sites || [], running = overview?.running || [];
+  return html`
+    <${PageHeader} eyebrow="Sites" title="Sites" />
+    <div class="site-rows">
+      ${sites.map((s) => html`<div class="site-row">
+        <a class="tile" href=${`#/site/${s.domain}`} aria-hidden="true" tabindex="-1">${s.title[0]}</a>
+        <div class="who"><a class="title" href=${`#/site/${s.domain}`}>${s.title}</a><span class="domain">${s.domain}</span></div>
+        <dl class="facts">
+          <div><dt>Operations</dt><dd>${s.operations}</dd></div>
+          <div><dt>Verified</dt><dd>${s.verified}</dd></div>
+          <div><dt>Read / Write</dt><dd>${s.reads} / ${s.writes}</dd></div>
+          <div><dt>Session</dt><dd><${Status} state=${s.connection || "none"} /><small>${ago(s.checked)}</small></dd></div>
+        </dl>
+        <div class="acts"><a class="button secondary" href=${`#/site/${s.domain}`}>Open →</a></div>
+      </div>`)}
+      ${running.map((j) => html`<div class="site-row">
+        <a class="tile" href=${`#/job/${j.id}`} aria-hidden="true" tabindex="-1">${j.domain[0].toUpperCase()}</a>
+        <div class="who"><a class="title" href=${`#/job/${j.id}`}>${j.domain.split(".")[0]}</a><span class="domain">${j.domain}</span></div>
+        <dl class="facts"><div><dt>Status</dt><dd><${Status} state="busy" label=${j.status} /></dd></div></dl>
+        <div class="acts"><a class="button secondary" href=${`#/job/${j.id}`}>Watch →</a></div>
+      </div>`)}
+      ${overview && !sites.length && !running.length && html`<div class="empty">No sites yet</div>`}
+    </div>`;
+}
+
+/* ---------- skills ---------- */
+
+function LessonCard({ l, n, admin, onChange }) {
+  const set = async (status) => { await api(`/api/skills/${l.id}`, { method: "POST", body: { status } }); onChange(); };
+  return html`<li class="lesson">
+    <span class="lesson-n">${String(n).padStart(2, "0")}</span>
+    <div class="lesson-body">
+      <div class="row"><span class="mono muted">${l.site} · ${l.date}</span><span class="spacer"></span>
+        <span class="tag ${l.source}">${l.source}</span>
+        <${Status} state=${l.status === "approved" ? "done" : l.status === "rejected" ? "blocked" : "queued"} label=${l.status} /></div>
+      <p class="lesson-text">${l.lesson}</p>
+      ${(l.failure || l.fix) && html`<details><summary>The mistake</summary>
+        ${l.failure && html`<div class="lesson-part"><span class="eyebrow">What went wrong</span><p>${l.failure}</p></div>`}
+        ${l.fix && html`<div class="lesson-part"><span class="eyebrow">Fix</span><pre class="code">${l.fix}</pre></div>`}
+      </details>`}
+      ${admin && l.status === "proposed" && html`<div class="row"><button class="button primary small" onClick=${() => set("approved")}>Approve</button>
+        <button class="button secondary small" onClick=${() => set("rejected")}>Reject</button></div>`}
+    </div>
+  </li>`;
+}
+
+function Skills({ admin }) {
+  const [data, , refresh] = usePoll(() => api("/api/skills"), 15000, []);
+  const items = data?.lessons || [];
+  return html`
+    <${PageHeader} eyebrow="Skills" title="What the generator has learned">
+      <${Help}><ol><li>Each lesson came from a real mistake, shown under “The mistake”.</li>
+        <li>Approved lessons are read before every generation.</li><li>Auto lessons wait for approval.</li></ol><//>
+    <//>
+    <dl class="summary">
+      <div><dt>Lessons</dt><dd>${items.length}</dd></div>
+      <div><dt>Approved</dt><dd>${data?.approved ?? "–"}</dd></div>
+      <div><dt>From sites</dt><dd>${data?.sites ?? "–"}</dd></div>
+      <div><dt>Read before every run</dt><dd>✓</dd></div>
+    </dl>
+    <ol class="lessons section">${items.map((l, i) => html`<${LessonCard} l=${l} n=${i + 1} admin=${admin} onChange=${refresh} />`)}</ol>`;
 }
 
 /* ---------- site ---------- */
@@ -262,7 +335,7 @@ function Site({ domain }) {
     codex: [`codex mcp add ${name} --url ${mcp}`, `codex mcp add ${name} --url ${shownMcp}`],
   };
   return html`
-    <a class="back" href="#/">← All sites</a>
+    <a class="back" href="#/sites">← All sites</a>
     <${PageHeader} eyebrow=${domain} title=${site.title}>
       <${Status} state=${connectJob ? "busy" : conn?.status || "none"} />
       ${!connectJob && html`<button class="button secondary" onClick=${startConnect}>${conn ? "Reconnect" : "Connect"}</button>`}
@@ -340,7 +413,7 @@ function Generate({ id }) {
   const verified = ops.filter((o) => o.status === "verified").length;
   const rows = logRows(data.events, job.created);
   return html`
-    <a class="back" href="#/">← All sites</a>
+    <a class="back" href="#/">← Home</a>
     <${PageHeader} eyebrow="Generate" title=${data.domain}>
       <${Status} state=${running ? "busy" : job.status} />
       ${job.status === "published" && html`<a class="button primary" href=${`#/site/${data.domain}`}>Open</a>`}
@@ -489,21 +562,26 @@ function Reconnect({ token }) {
 
 /* ---------- app ---------- */
 
-function Shell({ page, arg, children, overview }) {
+function Shell({ page, arg, children, overview, signedIn, skillsCount }) {
   const [jobDomain, setJobDomain] = useState(null);
   useEffect(() => { setJobDomain(null); if (page === "job") api(`/api/jobs/${arg}`).then((j) => setJobDomain(j.domain)).catch(() => {}); }, [page, arg]);
   const site = page === "site" ? overview?.sites?.find((s) => s.domain === arg)?.title || arg : page === "job" ? jobDomain : null;
   const signOut = async () => { await api("/api/logout", { method: "POST" }).catch(() => {}); location.hash = "#/login"; };
+  const cur = (p) => (p ? "page" : undefined);
+  const count = (n) => (n ? html`<span class="nav-count">${n}</span>` : "");
   return html`<div class="app-shell">
     <aside class="sidebar">
       <a class="brand" href="#/"><span class="brand-mark"><${KeyIcon} /></span>Skeleton Key</a>
       <div class="sidebar-context"><small>Site</small><strong>${site || "None selected"}</strong></div>
       <nav class="side-nav">
-        <a class="nav-item" href="#/" aria-current=${!page || page === "site" || page === "job" ? "page" : undefined}>
-          <${HomeIcon} />Sites${overview?.sites?.length ? html`<span class="nav-count">${overview.sites.length}</span>` : ""}</a>
-        <a class="nav-item" href="#/race" aria-current=${page === "race" ? "page" : undefined}><${RaceIcon} />Race</a>
+        <a class="nav-item" href="#/" aria-current=${cur(!page || page === "job")}><${HomeIcon} />Home</a>
+        <a class="nav-item" href="#/sites" aria-current=${cur(page === "sites" || page === "site")}><${SitesIcon} />Sites${count(overview?.sites?.length)}</a>
+        <a class="nav-item" href="#/skills" aria-current=${cur(page === "skills")}><${SkillsIcon} />Skills${count(skillsCount)}</a>
+        <a class="nav-item" href="#/race" aria-current=${cur(page === "race")}><${RaceIcon} />Race</a>
       </nav>
-      <div class="sidebar-bottom"><button class="signout" onClick=${signOut}>Sign out</button></div>
+      <div class="sidebar-bottom">${signedIn
+        ? html`<button class="signout" onClick=${signOut}>Sign out</button>`
+        : html`<a class="signout" href="#/login?next=/skills">Sign in</a>`}</div>
     </aside>
     <main class="app-main"><div class="page">${children}</div></main>
   </div>`;
@@ -513,15 +591,20 @@ function App() {
   const { parts, query } = useRoute();
   const [page, arg] = parts;
   const bare = page === "login" || page === "r";
-  const [overview] = usePoll(() => (bare ? Promise.resolve(null) : api("/api/overview")), bare ? 0 : 5000, [bare]);
+  const [overview, overviewErr] = usePoll(() => (bare ? Promise.resolve(null) : api("/api/overview")), bare ? 0 : 5000, [bare]);
+  const [skills] = usePoll(() => (bare ? Promise.resolve(null) : api("/api/skills")), bare ? 0 : 30000, [bare]);
   if (page === "login") return html`<${Login} query=${query} />`;
   if (page === "r") return html`<${Reconnect} token=${arg} />`;
+  const signedIn = !!overview && !overviewErr;
   let view;
   if (page === "site") view = html`<${Site} domain=${arg} />`;
+  else if (page === "sites") view = html`<${Sites} overview=${overview} />`;
+  else if (page === "skills") view = html`<${Skills} admin=${signedIn} />`;
   else if (page === "job") view = html`<${Generate} id=${arg} />`;
   else if (page === "race") view = html`<${Race} raceId=${arg} overview=${overview} />`;
   else view = html`<${Home} overview=${overview} />`;
-  return html`<${Shell} page=${page} arg=${arg} overview=${overview}>${view}<//>`;
+  return html`<${Shell} page=${page} arg=${arg} overview=${overview} signedIn=${signedIn}
+    skillsCount=${skills?.lessons?.length}>${view}<//>`;
 }
 
 render(html`<${App} />`, document.getElementById("app"));

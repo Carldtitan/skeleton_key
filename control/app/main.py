@@ -14,7 +14,7 @@ from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from pydantic import BaseModel
 
-from . import db, gateway, jobs, liveview, mcp_server, race
+from . import db, gateway, jobs, lessons, liveview, mcp_server, race
 from .config import LIVE_BASE, ANTHROPIC_API_KEY, BROWSE_MODEL, FRONTIER_MODEL, HEALTH_CHECK_SECONDS, PUBLIC_URL
 from .endpoints import site_domain
 
@@ -106,7 +106,11 @@ def overview():
         ops = s["spec"]["operations"]
         sites.append({"domain": s["domain"], "title": s["title"], "operations": len(ops),
                       "verified": sum(o["status"] == "verified" for o in ops),
-                      "connection": (connection_view(conn) or {}).get("status")})
+                      "reads": sum(o["spec"].get("side_effect") == "read" for o in ops),
+                      "writes": sum(o["spec"].get("side_effect") != "read" for o in ops),
+                      "published": s["published"],
+                      "connection": (connection_view(conn) or {}).get("status"),
+                      "checked": (conn or {}).get("checked")})
     published = {s["domain"] for s in sites}
     running = [{"id": j["id"], "domain": site_domain(j["site_url"]), "status": j["status"]}
                for j in db.list_jobs()
@@ -299,6 +303,39 @@ def reconnect_done(token: str):
     ev = jobs.human_done.get(t["job_id"] or "")
     if ev:
         ev.set()
+    return {"ok": True}
+
+
+# --- Skills (public: lessons are general rules; still scrubbed for personal data) -----------------
+
+def _personal_values():
+    from .publisher import personal_values
+    values = set()
+    for s in db.list_sites():
+        values |= personal_values(s["job_id"], db.operations(s["job_id"]), db.get_session(s["job_id"]) or [])
+    return values
+
+
+@app.get("/api/skills")
+async def skills():
+    from .publisher import redact_value
+    items = await asyncio.to_thread(lessons.load_all)
+    values = _personal_values()
+    items = [redact_value({k: l.get(k) for k in ("id", "site", "date", "lesson", "failure", "fix", "status", "source",
+                                                  "scope")}, values) for l in items]
+    return {"lessons": items, "sites": len({l["site"] for l in items}),
+            "approved": sum(l["status"] == "approved" for l in items)}
+
+
+class LessonStatus(BaseModel):
+    status: str
+
+
+@app.post("/api/skills/{lesson_id}", dependencies=[Depends(admin)])
+async def set_lesson_status(lesson_id: str, body: LessonStatus):
+    if body.status not in ("approved", "rejected", "proposed"):
+        raise HTTPException(400, "status must be approved, rejected or proposed")
+    await asyncio.to_thread(lessons.set_status, lesson_id, body.status)
     return {"ok": True}
 
 

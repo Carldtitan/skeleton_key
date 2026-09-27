@@ -345,8 +345,10 @@ class Generator:
         try:
             text, _ = await llm.chat(CODE_MODEL, [{"role": "user", "content": LESSON_PROMPT.format(
                 site=self.site, failure=failure[:800], code=code[:3000])}], max_tokens=4000)
-            await asyncio.to_thread(lessons.append, site_domain(self.site), text.strip().splitlines()[-1])
-            self.event("lesson", {"lesson": text.strip()[:300]})
+            lesson = text.strip().splitlines()[-1]
+            # Proposed, not approved: a curator approves it before the generator starts using it.
+            await asyncio.to_thread(lessons.propose, site_domain(self.site), lesson, failure, code)
+            self.event("lesson", {"lesson": lesson[:300], "status": "proposed"})
         except Exception as e:
             self.event("error", {"lesson": str(e)[:200]})
 
