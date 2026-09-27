@@ -17,7 +17,7 @@ FILE_EXT = re.compile(r"^(.*?)(\.[A-Za-z0-9]{1,5})$")
 API_TYPES = {"xhr", "fetch"}
 # Words that mark login/credential flows. Matched as whole words after splitting camelCase and
 # separators, so "getLoginToken" and "/auth/email/start" match but "authors" does not.
-AUTH_WORDS = {"auth", "login", "logout", "signin", "signout", "signup", "register", "passkey", "passkeys",
+AUTH_WORDS = {"auth", "login", "logout", "signin", "signins", "signout", "signup", "signups", "register", "passkey", "passkeys",
               "sudo", "2fa", "mfa", "otp", "sms", "password"}
 
 

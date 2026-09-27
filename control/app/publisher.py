@@ -16,7 +16,7 @@ import boto3
 
 from . import db, llm
 from .config import CODE_MODEL
-from .endpoints import site_domain
+from .endpoints import is_auth_path, site_domain
 from .generator import Generator, check, module_name
 
 BUCKET = "sk-specs"
@@ -225,7 +225,9 @@ async def publish(job_id, base_url):
     domain = site_domain(job["site_url"])
     title = domain.split(".")[0].capitalize()
     gen = Generator(job_id, job["site_url"])
-    ops = [o for o in db.operations(job_id) if o["status"] in PUBLISHABLE and o["spec"]]
+    # Login steps are never operations: the connection's session covers auth.
+    ops = [o for o in db.operations(job_id) if o["status"] in PUBLISHABLE and o["spec"]
+           and not is_auth_path(o["endpoint"].split(" ", 1)[-1])]
     for o in ops:
         o["name"] = o["spec"]["name"]
     db.add_event(job_id, "status", {"status": "publishing", "detail": f"{len(ops)} operations"})

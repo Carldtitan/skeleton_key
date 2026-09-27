@@ -89,8 +89,19 @@ PARTIFUL = [
          fix="build(): one retry on an unparseable generation; the LLM client doubles max_tokens after an empty reply."),
 ]
 
+# Mistakes from the first cerebralvalley.ai run (2026-09-27).
+CEREBRAL = [
+    dict(source="curated", status="approved", scope="publish",
+         lesson="Auth providers name login steps in plural REST style (Clerk: /v1/client/sign_ins/{id}/attempt_first_factor); "
+                "treat sign_ins and sign_ups as login flows, and never publish a login step as an operation.",
+         failure="Two Clerk login steps were published as operations: create_sign_in_attempt and "
+                 "verify_sign_in_email_code. \"sign ins\" joined to \"signins\", which wasn't a login word.",
+         fix="AUTH_WORDS adds signins and signups; publish() drops any operation whose path is_auth_path."),
+]
+
 if __name__ == "__main__":
-    for site, date, items in (("luma.com", D, SEED), ("partiful.com", "2026-09-27", PARTIFUL)):
+    for site, date, items in (("luma.com", D, SEED), ("partiful.com", "2026-09-27", PARTIFUL),
+                              ("cerebralvalley.ai", "2026-09-27", CEREBRAL)):
         for s in items:
             item = lessons.propose(site, s["lesson"], s["failure"], s["fix"], source=s["source"],
                                    status=s["status"], scope=s["scope"], date=date)
