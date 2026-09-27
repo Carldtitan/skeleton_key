@@ -25,7 +25,7 @@ function useRoute() {
   };
   const [route, setRoute] = useState(read);
   useEffect(() => {
-    const on = () => setRoute(read());
+    const on = () => { setRoute(read()); window.scrollTo(0, 0); };
     addEventListener("hashchange", on);
     return () => removeEventListener("hashchange", on);
   }, []);
@@ -54,6 +54,22 @@ const fmtS = (s) => (s == null ? "–" : s < 10 ? `${s.toFixed(1)}s` : `${Math.r
 const fmtUsd = (c) => (c == null ? "–" : c === 0 ? "$0" : c < 0.01 ? `$${c.toFixed(4)}` : `$${c.toFixed(3)}`);
 const fmtN = (n) => (n == null ? "–" : n.toLocaleString());
 const mask = (key) => (key ? key.slice(0, 7) + "…" : "");
+const plain = (t) => (t || "").replace(/\*\*|__|`/g, "");
+const clock = (secs) => `${String(Math.floor(secs / 60)).padStart(2, "0")}:${String(Math.floor(secs % 60)).padStart(2, "0")}`;
+const ago = (ts) => {
+  if (!ts) return "–";
+  const m = Math.round((Date.now() / 1000 - ts) / 60);
+  return m < 1 ? "just now" : m < 60 ? `${m} min ago` : `${Math.round(m / 60)} h ago`;
+};
+
+/* ---------- icons ---------- */
+
+const KeyIcon = () => html`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+  <circle cx="7.5" cy="15.5" r="4.5"/><path d="M10.7 12.3 20 3M16 7l3 3M14 9l2 2"/></svg>`;
+const HomeIcon = () => html`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+  <path d="M3 10.5 12 3l9 7.5V21a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1z"/></svg>`;
+const RaceIcon = () => html`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+  <path d="M3 12h4l3-8 4 16 3-8h4"/></svg>`;
 
 /* ---------- small components ---------- */
 
@@ -71,36 +87,62 @@ function Help({ children }) {
   </span>`;
 }
 
-function Status({ state }) {
-  const map = {
-    active: ["ok", "connected"], expired: ["bad", "expired"], none: ["idle", "not connected"],
-    busy: ["busy", "working"],
-  };
-  const [cls, word] = map[state] || ["idle", state];
-  return html`<span class="status ${cls}">${word}</span>`;
+const STATUS = {
+  active: ["done", "connected"], expired: ["blocked", "expired"], none: ["queued", "not connected"],
+  busy: ["live", "working"], published: ["done", "published"], failed: ["blocked", "failed"],
+  stopped: ["queued", "stopped"], interrupted: ["blocked", "interrupted"], connected: ["done", "connected"],
+};
+function Status({ state, label }) {
+  const [cls, word] = STATUS[state] || ["live", state];
+  return html`<span class="status ${cls}"><i></i>${label || word}</span>`;
 }
 
 function Copy({ text, shown }) {
   const [done, setDone] = useState(false);
   const copy = async () => { await navigator.clipboard.writeText(text); setDone(true); setTimeout(() => setDone(false), 1400); };
   return html`<div class="copy"><code>${shown || text}</code>
-    <button class="btn small" onClick=${copy}>${done ? "Copied" : "Copy"}</button></div>`;
+    <button class="button small" onClick=${copy}>${done ? "Copied" : "Copy"}</button></div>`;
 }
 
-function Frame({ url, children }) {
+function Frame({ url, ended, children }) {
   return html`<div class="frame">
     ${url ? html`<iframe src=${url} title="Live browser" allow="clipboard-read; clipboard-write"></iframe>`
-          : html`<div class="placeholder">starting browser…</div>`}
+          : html`<div class="placeholder">${ended ? "Browser closed" : "Starting the browser…"}</div>`}
     ${children}
   </div>`;
 }
 
 function Handoff({ message, onDone }) {
   return html`<div class="handoff" role="alert"><span class="msg">${message}</span>
-    <button class="btn accent" onClick=${onDone}>Done</button></div>`;
+    <button class="button primary" onClick=${onDone}>Done</button></div>`;
 }
 
-/* ---------- login ---------- */
+function PageHeader({ eyebrow, title, mono, children }) {
+  return html`<header class="page-header">
+    <div><span class="eyebrow">${eyebrow}</span><h1 class=${mono ? "mono" : ""}>${title}</h1></div>
+    <div class="actions">${children}</div>
+  </header>`;
+}
+
+function SectionHeading({ title, count, children }) {
+  return html`<div class="section-heading"><h2>${title}</h2>
+    <div class="row">${count != null && html`<span class="section-count">${count}</span>`}${children}</div></div>`;
+}
+
+/* ---------- landing / login ---------- */
+
+function GateArt() {
+  return html`<div class="gate-art" aria-hidden="true">
+    <div class="chrome"><i></i><i></i><i></i></div>
+    <div class="body">
+      <div class="bars"><div class="bar" style="width:34%"></div><div class="bar" style="width:28%"></div></div>
+      <div class="bar" style="width:84%;height:22px"></div>
+      <div class="bars"><div class="bar" style="width:58%;height:42px"></div><div class="bar" style="width:30%;height:42px;background:#d6cabd"></div></div>
+      <div class="picked" style="width:52%"><code>POST /rsvp</code></div>
+      <div class="out"><div>rsvp_event(event_id)</div><div><span>verified ·</span> 0.6s</div></div>
+    </div>
+  </div>`;
+}
 
 function Login({ query }) {
   const [pw, setPw] = useState("");
@@ -110,18 +152,27 @@ function Login({ query }) {
     try { await api("/api/login", { method: "POST", body: { password: pw } }); location.hash = "#" + (query.get("next") || "/"); }
     catch (x) { setErr("Wrong password"); }
   };
-  return html`<div class="login"><h1>🗝 Skeleton Key</h1>
-    <form onSubmit=${submit}>
-      <label class="vh" for="pw">Password</label>
-      <input id="pw" class="text" type="password" autofocus value=${pw} onInput=${(e) => setPw(e.target.value)} />
-      <button class="btn primary">Enter</button>
-    </form>${err && html`<div class="error">${err}</div>`}</div>`;
+  return html`<div class="gate">
+    <div class="gate-brand"><span class="brand-mark"><${KeyIcon} /></span>Skeleton Key</div>
+    <div class="gate-main">
+      <div>
+        <h1>Any web app.<br /><em>Now an API.</em></h1>
+        <form onSubmit=${submit}>
+          <label class="vh" for="pw">Password</label>
+          <input id="pw" class="input large" type="password" placeholder="Password" autofocus value=${pw}
+            onInput=${(e) => setPw(e.target.value)} />
+          <button class="button dark large">Enter</button>
+        </form>
+        ${err && html`<div class="error">${err}</div>`}
+      </div>
+      <${GateArt} />
+    </div>
+  </div>`;
 }
 
 /* ---------- home ---------- */
 
-function Home() {
-  const [data] = usePoll(() => api("/api/overview"), 4000, []);
+function Home({ overview }) {
   const [url, setUrl] = useState("");
   const [busy, setBusy] = useState(false);
   const start = async (e) => {
@@ -131,49 +182,49 @@ function Home() {
     try { const { id } = await api("/api/jobs", { method: "POST", body: { site_url: url.trim() } }); location.hash = `#/job/${id}`; }
     finally { setBusy(false); }
   };
+  const sites = overview?.sites || [], running = overview?.running || [];
   return html`
-    <div class="head"><span class="grow"></span>
+    <${PageHeader} eyebrow="Home" title="Generate an API">
       <${Help}><ol><li>Paste the web app's address.</li><li>Press Generate.</li>
-        <li>Log in when the browser asks, then press Done.</li></ol><//></div>
-    <form class="generate" onSubmit=${start}>
-      <label class="vh" for="url">Web app URL</label>
-      <input id="url" class="text" placeholder="https://" value=${url} onInput=${(e) => setUrl(e.target.value)} />
-      <button class="btn primary" disabled=${busy}>Generate</button>
+        <li>Log in when the browser asks, then press Done.</li></ol><//>
+    <//>
+    <form class="card generate" onSubmit=${start}>
+      <div><label class="field-label" for="url">Web app</label>
+        <input id="url" class="input large mono" placeholder="https://yourapp.com" value=${url} onInput=${(e) => setUrl(e.target.value)} /></div>
+      <button class="button primary large" disabled=${busy}>Generate</button>
     </form>
-    <div class="cards">
-      ${(data?.sites || []).map((s) => html`
-        <a class="card" href=${`#/site/${s.domain}`}>
-          <div class="title">${s.title}</div><div class="domain">${s.domain}</div>
-          <div class="foot"><span class="n">${s.operations} ops</span><${Status} state=${s.connection || "none"} /></div>
-        </a>`)}
-      ${(data?.running || []).map((j) => html`
-        <a class="card" href=${`#/job/${j.id}`}>
-          <div class="title">${j.domain.split(".")[0]}</div><div class="domain">${j.domain}</div>
-          <div class="foot"><span class="n">${j.status}</span><${Status} state="busy" /></div>
-        </a>`)}
-    </div>
-    ${data && !data.sites.length && !data.running.length && html`<div class="empty-state">No sites yet.</div>`}`;
+    <section class="section">
+      <${SectionHeading} title="Sites" count=${sites.length + running.length} />
+      <div class="sites">
+        ${sites.map((s) => html`<a class="site-card" href=${`#/site/${s.domain}`}>
+          <span class="title">${s.title}</span><span class="domain">${s.domain}</span>
+          <span class="foot"><span class="n">${s.operations} operations</span><${Status} state=${s.connection || "none"} /></span></a>`)}
+        ${running.map((j) => html`<a class="site-card" href=${`#/job/${j.id}`}>
+          <span class="title">${j.domain.split(".")[0]}</span><span class="domain">${j.domain}</span>
+          <span class="foot"><span class="n">${j.status}</span><${Status} state="busy" /></span></a>`)}
+      </div>
+      ${overview && !sites.length && !running.length && html`<div class="empty">No sites yet</div>`}
+    </section>`;
 }
 
 /* ---------- site ---------- */
 
 const TAB_HELP = {
-  claude: html`<ol><li>Run the line in a terminal.</li><li>Start a new Claude Code session.</li>
-    <li>Status red: press Reconnect and log in.</li></ol>
-    <p class="muted">VS Code extension: add the MCP URL to <code>.mcp.json</code> in your project.</p>`,
-  codex: html`<ol><li>Run the line in a terminal.</li><li>In Codex, type <code>/mcp</code> to check it loaded.</li><li>Status red: press Reconnect and log in.</li></ol>`,
+  claude: html`<ol><li>Run the line in a terminal.</li><li>Start a new Claude Code session.</li></ol>
+    <p>VS Code extension: add the MCP URL to <code>.mcp.json</code> in your project.</p>`,
+  codex: html`<ol><li>Run the line in a terminal.</li><li>In Codex, type <code>/mcp</code> to check it loaded.</li></ol>`,
   agent: html`<ol><li>MCP clients: add the MCP URL.</li><li>Anything else: POST JSON to the REST URL with the header.</li></ol>`,
   code: html`<ol><li>Download and unzip.</li><li>Call <code>run(session, …)</code> with your own cookies in <code>session</code>.</li></ol>`,
 };
 
-function Connect({ domain, jobId, onFinished }) {
+function Connect({ jobId, onFinished }) {
   const [data] = usePoll(() => api(`/api/jobs/${jobId}`), 1500, [jobId]);
   const status = data?.job?.status;
   useEffect(() => { if (status === "connected" || status === "failed") onFinished(status); }, [status]);
-  return html`<${Frame} url=${data?.live_url}>
+  return html`<section class="section"><${Frame} url=${data?.live_url}>
     ${status === "needs_human" && html`<${Handoff} message="Log in, then press Done."
       onDone=${() => api(`/api/jobs/${jobId}/human-done`, { method: "POST" })} />`}
-  <//>`;
+  <//></section>`;
 }
 
 function OpRow({ op }) {
@@ -183,10 +234,10 @@ function OpRow({ op }) {
       <span class="nm">${op.name}</span><span class="caret">▶</span></summary>
     <div class="opbody">
       ${op.description && html`<p>${op.description}</p>`}
-      ${op.params.length > 0 && html`<table><thead><tr><th>param</th><th>type</th><th></th></tr></thead><tbody>
+      ${op.params.length > 0 && html`<table class="grid"><thead><tr><th>Param</th><th>Type</th><th></th></tr></thead><tbody>
         ${op.params.map((p) => html`<tr><td><code>${p.name}${p.required ? "" : "?"}</code></td><td class="muted">${p.type}</td>
           <td class="muted">${p.description}</td></tr>`)}</tbody></table>`}
-      ${op.returns?.length > 0 && html`<table><thead><tr><th>returns</th><th></th></tr></thead><tbody>
+      ${op.returns?.length > 0 && html`<table class="grid"><thead><tr><th>Returns</th><th></th></tr></thead><tbody>
         ${op.returns.map((r) => html`<tr><td><code>${r.name}</code></td><td class="muted">${r.description}</td></tr>`)}</tbody></table>`}
       <pre class="code">${op.code}</pre>
     </div></details>`;
@@ -196,7 +247,7 @@ function Site({ domain }) {
   const [site, , refresh] = usePoll(() => api(`/api/sites/${domain}`), 10000, [domain]);
   const [tab, setTab] = useState("claude");
   const [connectJob, setConnectJob] = useState(null);
-  if (!site) return html`<div class="muted">…</div>`;
+  if (!site) return null;
   const conn = site.connection;
   const name = domain.split(".")[0];
   const mcp = conn?.mcp_url;
@@ -204,30 +255,34 @@ function Site({ domain }) {
   const probe = site.operations.find((o) => o.side_effect === "read" && !o.params.some((p) => p.required));
   const reads = site.operations.filter((o) => o.side_effect === "read");
   const writes = site.operations.filter((o) => o.side_effect !== "read");
+  const verified = site.operations.filter((o) => o.status === "verified").length;
   const startConnect = async () => setConnectJob((await api(`/api/sites/${domain}/connect`, { method: "POST" })).job_id);
   const lines = {
     claude: [`claude mcp add --transport http ${name} ${mcp}`, `claude mcp add --transport http ${name} ${shownMcp}`],
     codex: [`codex mcp add ${name} --url ${mcp}`, `codex mcp add ${name} --url ${shownMcp}`],
   };
   return html`
-    <div class="head">
-      <a class="back" href="#/" aria-label="Back">←</a><h1>${site.title}</h1>
-      <span class="mono muted">${domain}</span>
-      <span class="spacer"></span>
+    <a class="back" href="#/">← All sites</a>
+    <${PageHeader} eyebrow=${domain} title=${site.title}>
       <${Status} state=${connectJob ? "busy" : conn?.status || "none"} />
-      ${!connectJob && html`<button class="btn" onClick=${startConnect}>${conn ? "Reconnect" : "Connect"}</button>`}
-    </div>
-    ${connectJob && html`<${Connect} domain=${domain} jobId=${connectJob}
-        onFinished=${() => { setConnectJob(null); refresh(); }} />`}
-    ${!connectJob && conn && html`
-      <div class="row" style="margin-bottom:10px">
-        <div class="tabs" role="tablist">
-          ${[["claude", "Claude Code"], ["codex", "Codex"], ["agent", "Any agent"], ["code", "Code"]].map(([k, label]) => html`
-            <button class="tab" role="tab" aria-selected=${tab === k} onClick=${() => setTab(k)}>${label}</button>`)}
-        </div><span class="spacer"></span><${Help}>${TAB_HELP[tab]}<//>
+      ${!connectJob && html`<button class="button secondary" onClick=${startConnect}>${conn ? "Reconnect" : "Connect"}</button>`}
+    <//>
+    <dl class="summary">
+      <div><dt>Operations</dt><dd>${site.operations.length}</dd></div>
+      <div><dt>Verified</dt><dd>${verified}</dd></div>
+      <div><dt>Read</dt><dd>${reads.length}</dd></div>
+      <div><dt>Write</dt><dd>${writes.length}</dd></div>
+      <div><dt>Session checked</dt><dd>${ago(conn?.checked)}</dd></div>
+    </dl>
+    ${connectJob && html`<${Connect} jobId=${connectJob} onFinished=${() => { setConnectJob(null); refresh(); }} />`}
+    ${!connectJob && conn && html`<section class="section">
+      <${SectionHeading} title="Connect your agent"><${Help}>${TAB_HELP[tab]}<//><//>
+      <div class="tablist" role="tablist">
+        ${[["claude", "Claude Code"], ["codex", "Codex"], ["agent", "Any agent"], ["code", "Code"]].map(([k, label]) => html`
+          <button class="tab" role="tab" aria-selected=${tab === k} onClick=${() => setTab(k)}>${label}</button>`)}
       </div>
       ${lines[tab] && html`<${Copy} text=${lines[tab][0]} shown=${lines[tab][1]} />`}
-      ${tab === "agent" && html`<div class="card kv">
+      ${tab === "agent" && html`<div class="kv">
         <span class="k">MCP</span><${Copy} text=${mcp} shown=${shownMcp} />
         <span class="k">REST</span><${Copy} text=${`${site.rest_base}/<operation>`} />
         <span class="k">Header</span><${Copy} text=${`Authorization: Bearer ${conn.api_key}`} shown=${`Authorization: Bearer ${mask(conn.api_key)}`} />
@@ -235,87 +290,108 @@ function Site({ domain }) {
           text=${`curl -X POST ${site.rest_base}/${probe.name} -H "Authorization: Bearer ${conn.api_key}" -d '{}'`}
           shown=${`curl -X POST ${site.rest_base}/${probe.name} -H "Authorization: Bearer ${mask(conn.api_key)}" -d '{}'`} />`}
       </div>`}
-      ${tab === "code" && html`<div class="row">
-        <a class="btn primary" href=${site.download_url}>Download</a>
-        <a class="btn" href=${site.openapi_url} target="_blank" rel="noopener">OpenAPI</a></div>`}`}
-    <div class="ops">
-      <div><h2>Read · ${reads.length}</h2><div class="oplist">${reads.map((o) => html`<${OpRow} op=${o} />`)}</div></div>
-      <div><h2>Write · ${writes.length}</h2><div class="oplist">${writes.map((o) => html`<${OpRow} op=${o} />`)}</div></div>
-    </div>`;
+      ${tab === "code" && html`<div class="row" style="margin-top:14px">
+        <a class="button primary" href=${site.download_url}>Download</a>
+        <a class="button secondary" href=${site.openapi_url} target="_blank" rel="noopener">OpenAPI</a></div>`}
+    </section>`}
+    <section class="section">
+      <${SectionHeading} title="Operations" count=${site.operations.length} />
+      <div class="ops">
+        <div class="oplist"><div class="oplist-head"><span class="eyebrow">Read</span><span class="section-count">${reads.length}</span></div>
+          ${reads.map((o) => html`<${OpRow} op=${o} />`)}</div>
+        <div class="oplist"><div class="oplist-head"><span class="eyebrow">Write</span><span class="section-count">${writes.length}</span></div>
+          ${writes.map((o) => html`<${OpRow} op=${o} />`)}</div>
+      </div>
+    </section>`;
 }
 
 /* ---------- generate ---------- */
 
-const PHASES = [["login", "Login"], ["explore", "Explore"], ["generate", "Generate"], ["verify", "Verify"], ["publish", "Publish"]];
+const PHASES = [["login", "Log in"], ["explore", "Explore"], ["generate", "Generate"], ["verify", "Verify"], ["publish", "Publish"]];
 const OP_MARK = {
   verified: ["ok", "✓"], failed: ["bad", "✗"], excluded: ["idle", "–"],
   unverified_irreversible: ["idle", "–"], unverified_no_undo: ["idle", "–"],
 };
 
+function logRows(events, start) {
+  const rows = [];
+  for (const e of events) {
+    const d = e.data || {};
+    const at = clock(Math.max(0, e.ts - start));
+    if (e.kind === "status") { if (typeof d.detail === "string" && d.detail) rows.push([at, d.status, d.detail]); }
+    else if (e.kind === "step") rows.push([at, "explore", `${d.label || d.action}`]);
+    else if (e.kind === "operation") rows.push([at, "verify", `${d.name}: ${d.status}${d.attempt ? ` (${d.attempt}/4)` : ""}`]);
+    else if (e.kind === "published") rows.push([at, "publish", `${d.operations} operations published`]);
+    else if (e.kind === "lesson") rows.push([at, "lesson", d.lesson]);
+    else if (e.kind === "error") rows.push([at, "error", JSON.stringify(d).slice(0, 160), true]);
+  }
+  return rows;
+}
+
 function Generate({ id }) {
   const [data] = usePoll(() => api(`/api/jobs/${id}`), 1500, [id]);
-  if (!data) return html`<div class="muted">…</div>`;
+  const logRef = useRef();
+  useEffect(() => { if (logRef.current) logRef.current.scrollTop = 1e9; }, [data?.events?.length]);
+  if (!data) return null;
   const { job, phase } = data;
   const idx = phase === "done" ? PHASES.length : PHASES.findIndex(([k]) => k === phase);
   const running = ["starting", "needs_human", "exploring", "explored", "generating", "generated", "publishing"].includes(job.status);
   const ops = data.operations.filter((o) => o.name);
   const verified = ops.filter((o) => o.status === "verified").length;
+  const rows = logRows(data.events, job.created);
   return html`
-    <div class="head">
-      <a class="back" href="#/" aria-label="Back">←</a><h1 class="mono">${data.domain}</h1>
-      <div class="rail">${PHASES.map(([k, label], i) => html`
-        ${i > 0 && html`<span class="sep">›</span>`}
-        <span class="ph ${i < idx ? "done" : i === idx ? "now" : ""}">${label}</span>`)}</div>
-      <span class="spacer"></span>
-      ${!running && !["published"].includes(job.status) && html`<span class="status bad">${job.status}</span>`}
+    <a class="back" href="#/">← All sites</a>
+    <${PageHeader} eyebrow="Generate" title=${data.domain}>
+      <${Status} state=${running ? "busy" : job.status} />
+      ${job.status === "published" && html`<a class="button primary" href=${`#/site/${data.domain}`}>Open</a>`}
+      ${running && html`<button class="button secondary" onClick=${() => api(`/api/jobs/${id}/stop`, { method: "POST" })}>Stop</button>`}
       <${Help}><ol><li>Log in inside the browser when asked, then press Done.</li><li>Everything after that runs on its own.</li></ol><//>
-    </div>
-    <div class="gen">
-      <div>
-        <${Frame} url=${data.live_url}>
-          ${job.status === "needs_human" && html`<${Handoff} message=${job.status_detail || "Log in, then press Done."}
-            onDone=${() => api(`/api/jobs/${id}/human-done`, { method: "POST" })} />`}
-        <//>
-        <div class="footer-bar">
-          <span>step <b>${data.steps}</b></span><span><b>${fmtUsd(data.cost_usd)}</b></span>
-          <span class="spacer"></span>
-          ${job.status === "published" && html`<a class="btn primary" href=${`#/site/${data.domain}`}>Open →</a>`}
-          ${running && html`<button class="btn small" onClick=${() => api(`/api/jobs/${id}/stop`, { method: "POST" })}>Stop</button>`}
-        </div>
-      </div>
+    <//>
+    <dl class="summary">
+      <div><dt>Step</dt><dd>${data.steps}</dd></div>
+      <div><dt>Endpoints</dt><dd>${data.endpoints.length}</dd></div>
+      <div><dt>Operations</dt><dd>${verified} / ${ops.length}</dd></div>
+      <div><dt>Cost</dt><dd>${fmtUsd(data.cost_usd)}</dd></div>
+    </dl>
+    <nav class="steps" aria-label="Progress">${PHASES.map(([k, label], i) => html`
+      <div class="step ${i < idx ? "done" : i === idx ? "now" : ""}" aria-current=${i === idx ? "step" : undefined}>
+        <small>0${i + 1}</small><span>${label}</span></div>`)}</nav>
+    <section class="section gen">
+      <${Frame} url=${running ? data.live_url : null} ended=${!running}>
+        ${job.status === "needs_human" && html`<${Handoff} message=${job.status_detail || "Log in, then press Done."}
+          onDone=${() => api(`/api/jobs/${id}/human-done`, { method: "POST" })} />`}
+      <//>
       <div class="side">
-        <div class="panel"><h2>Endpoints <span class="n">${data.endpoints.length}</span></h2>
+        <div class="panel"><div class="panel-head"><span class="eyebrow">Endpoints</span><span class="section-count">${data.endpoints.length}</span></div>
           <ul>${[...data.endpoints].reverse().map((e) => html`<li><span></span>
             <span class="ep" title=${e.endpoint}>${e.endpoint.replace(/^(\w+) [^/]+/, "$1 ")}</span><span></span>
             <span class="why">${e.label}</span></li>`)}</ul></div>
-        <div class="panel"><h2>Operations <span class="n">${verified} / ${ops.length}</span></h2>
+        <div class="panel"><div class="panel-head"><span class="eyebrow">Operations</span><span class="section-count">${verified} / ${ops.length}</span></div>
           <ul>${ops.map((o) => {
             const [cls, sym] = OP_MARK[o.status] || ["busy", "↻"];
             return html`<li><span class="mark ${cls}">${sym}</span><span class="ep">${o.name}</span>
               <span class="att">${cls === "busy" && o.attempts ? `${o.attempts}/4` : ""}</span></li>`;
           })}</ul></div>
       </div>
-    </div>`;
+    </section>
+    <section class="section">
+      <${SectionHeading} title="Log" />
+      <div class="log" ref=${logRef}>${rows.map(([at, ph, msg, err]) => html`
+        <div class="log-row ${err ? "error" : ""}"><span class="at">${at}</span><span class="ph">${ph}</span><span class="msg">${msg}</span></div>`)}</div>
+    </section>`;
 }
 
 /* ---------- race ---------- */
 
-const LANES = [
-  ["frontier_browser", "browser", false],
-  ["open_browser", "browser", false],
-  ["skeleton_key", "Skeleton Key", true],
-];
+const LANES = [["frontier_browser", "browser"], ["open_browser", "browser"], ["skeleton_key", "Skeleton Key"]];
 const shortModel = (m) => {
   if (!m) return "";
   const c = m.match(/^claude-([a-z]+)-(\d+)(?:-(\d+))?$/);
   if (c) return `Claude ${c[1][0].toUpperCase()}${c[1].slice(1)} ${c[2]}${c[3] ? "." + c[3] : ""}`;
   return m.replace(/^qwen/, "Qwen ").replace(/^glm/, "GLM ");
 };
-const plain = (t) => (t || "").replace(/\*\*|__|`/g, "");
-const ratio = (a, b) => (a >= b ? `${(a / b).toFixed(1)}× cheaper` : `${(b / a).toFixed(1)}× pricier`);
 
-function Race({ raceId }) {
-  const [overview] = usePoll(() => api("/api/overview"), 0, []);
+function Race({ raceId, overview }) {
   const sites = (overview?.sites || []).filter((s) => s.connection === "active");
   const [domain, setDomain] = useState(null);
   const [presets, setPresets] = useState(null);
@@ -325,7 +401,6 @@ function Race({ raceId }) {
   useEffect(() => {
     if (d) api(`/api/race/presets/${d}`).then((p) => { setPresets(p); setTask((t) => (raceId && t ? t : p.tasks[0])); });
   }, [d]);
-  // A raced task that isn't a preset shows in the free-text box.
   useEffect(() => { if (presets && task && !presets.tasks.includes(task)) setCustom(true); }, [presets, task]);
   const run = async (e) => {
     e.preventDefault();
@@ -333,23 +408,25 @@ function Race({ raceId }) {
     location.hash = `#/race/${race_id}`;
   };
   return html`
-    <form class="row" onSubmit=${run}>
-      <label class="vh" for="rsite">Site</label>
-      <select id="rsite" class="text" value=${d} onChange=${(e) => setDomain(e.target.value)}>
-        ${sites.map((s) => html`<option value=${s.domain}>${s.title}</option>`)}</select>
-      <label class="vh" for="rtask">Task</label>
-      ${custom ? html`<input id="rtask" class="text grow" value=${task} onInput=${(e) => setTask(e.target.value)} />`
-        : html`<select id="rtask" class="text grow" value=${task}
-            onChange=${(e) => (e.target.value === "__custom" ? (setCustom(true), setTask("")) : setTask(e.target.value))}>
-            ${(presets?.tasks || []).map((t) => html`<option value=${t}>${t}</option>`)}
-            <option value="__custom">Custom…</option></select>`}
-      <button class="btn primary" disabled=${!d || !task}>Run</button>
+    <${PageHeader} eyebrow="Race" title="Same task, three ways">
       <${Help}><ol><li>Pick a task and press Run.</li><li>All lanes act as the same logged-in user.</li>
         <li>✓ / ✗ is checked against the site's real data.</li></ol><//>
+    <//>
+    <form class="card race-form" onSubmit=${run}>
+      <div><label class="field-label" for="rsite">Site</label>
+        <select id="rsite" class="input" value=${d} onChange=${(e) => setDomain(e.target.value)}>
+          ${sites.map((s) => html`<option value=${s.domain}>${s.title}</option>`)}</select></div>
+      <div><label class="field-label" for="rtask">Task</label>
+        ${custom ? html`<input id="rtask" class="input" value=${task} onInput=${(e) => setTask(e.target.value)} />`
+          : html`<select id="rtask" class="input" value=${task}
+              onChange=${(e) => (e.target.value === "__custom" ? (setCustom(true), setTask("")) : setTask(e.target.value))}>
+              ${(presets?.tasks || []).map((t) => html`<option value=${t}>${t}</option>`)}
+              <option value="__custom">Custom…</option></select>`}</div>
+      <button class="button primary large" disabled=${!d || !task}>Run</button>
     </form>
-    ${raceId && html`<${RaceView} id=${raceId} frontier=${presets?.frontier} open=${presets?.open}
-        onTask=${(t) => t && t !== task && setTask(t)} />`}
-    ${!sites.length && overview && html`<div class="empty-state">Connect a site first.</div>`}`;
+    ${raceId && html`<section class="section"><${RaceView} id=${raceId} frontier=${presets?.frontier} open=${presets?.open}
+        onTask=${(t) => t && t !== task && setTask(t)} /></section>`}
+    ${overview && !sites.length && html`<div class="empty section">Connect a site first</div>`}`;
 }
 
 function RaceView({ id, frontier, open, onTask }) {
@@ -360,70 +437,90 @@ function RaceView({ id, frontier, open, onTask }) {
   if (!data) return null;
   const results = data.result?.results || {};
   const lanes = LANES.filter(([k]) => k !== "frontier_browser" || frontier || results[k] || data.contestants[k]);
-  const elapsed = (now / 1000 - data.started);
-  const best = results.skeleton_key;
+  const elapsed = now / 1000 - data.started;
   return html`
     <div class="lanes" style=${`--lanes:${lanes.length}`}>
-      ${lanes.map(([k, kind, ours]) => {
+      ${lanes.map(([k, kind]) => {
         const c = data.contestants[k] || { steps: [] };
         const r = results[k];
         const model = r?.model || (k === "frontier_browser" ? frontier : open);
         const live = !r && c.live_url && data.status === "racing";
-        return html`<div class="lane ${ours ? "ours" : ""}">
-          <h3>${shortModel(model) || (k === "frontier_browser" ? "Frontier" : "Open model")} · ${kind}</h3>
+        const verdict = r ? (r.correct === true ? ["good", "✓"] : r.correct === false ? ["bad", "✗"] : ["", "?"]) : ["", "…"];
+        return html`<div class="lane ${k === "skeleton_key" ? "ours" : ""}">
+          <h3>${shortModel(model)} · ${kind}</h3>
           ${live ? html`<${Frame} url=${c.live_url} />`
             : html`<div class="log">${c.steps.map((s) => html`<div>${s.step}. ${s.action}${s.thought
                 ? html` <span class="res">${s.thought}</span>` : ""}</div>`)}</div>`}
-          <div class="metrics">
-            <div class="metric"><div class="v">${r ? fmtS(r.seconds) : data.status === "racing" ? fmtS(elapsed) : "–"}</div><div class="l">time</div></div>
-            <div class="metric"><div class="v">${fmtN(r?.model_tokens ?? c.model_tokens)}</div><div class="l">tokens</div></div>
-            <div class="metric"><div class="v">${fmtUsd(r?.cost_usd ?? c.cost_usd)}</div><div class="l">cost</div></div>
-            <div class="metric"><div class="v">${r ? (r.correct === true ? html`<span class="verdict ok">✓</span>`
-              : r.correct === false ? html`<span class="verdict bad">✗</span>` : "?") : "…"}</div><div class="l">correct</div></div>
-          </div>
-          ${r && html`<div class="answer">${plain(r.answer) || html`<span class="muted">${r.error || "no answer"}</span>`}</div>`}
+          <dl class="metrics">
+            <div class="metric"><dt>Time</dt><dd>${r ? fmtS(r.seconds) : data.status === "racing" ? fmtS(elapsed) : "–"}</dd></div>
+            <div class="metric"><dt>Tokens</dt><dd>${fmtN(r?.model_tokens ?? c.model_tokens)}</dd></div>
+            <div class="metric"><dt>Cost</dt><dd>${fmtUsd(r?.cost_usd ?? c.cost_usd)}</dd></div>
+            <div class="metric"><dt>Correct</dt><dd class=${verdict[0]}>${verdict[1]}</dd></div>
+          </dl>
+          ${r && html`<div class="answer">${plain(r.answer) || html`<span class="muted">${r.error || "No answer"}</span>`}</div>`}
         </div>`;
       })}
     </div>
-    ${best && html`<div class="footer-bar">${lanes.filter(([k]) => k !== "skeleton_key" && results[k]).map(([k]) => html`
-      <span>vs ${shortModel(results[k].model)} · <b>${(results[k].seconds / Math.max(best.seconds, 0.1)).toFixed(1)}×</b> faster ·
-        <b>${best.cost_usd && results[k].cost_usd ? ratio(results[k].cost_usd, best.cost_usd) : "–"}</b></span>`)}</div>`}
-    ${data.status === "failed" && html`<div class="error">${data.detail}</div>`}`;
+    ${data.status === "failed" && html`<div class="empty section">${data.detail}</div>`}`;
 }
 
 /* ---------- reconnect link (no site password) ---------- */
 
 function Reconnect({ token }) {
   const [data, error] = usePoll(() => api(`/api/r/${token}`), 1500, [token]);
-  if (error?.status === 410) return html`<div class="login"><h1>Link expired</h1></div>`;
-  if (!data) return html`<div class="muted">…</div>`;
-  if (data.status === "connected") return html`<div class="login"><h1>✓ ${data.domain} reconnected</h1></div>`;
-  return html`<div class="head"><h1 class="mono">${data.domain}</h1><span class="spacer"></span>
-      <${Help}><ol><li>Log in inside the browser.</li><li>Press Done.</li></ol><//></div>
-    <${Frame} url=${data.live_url}>
-      ${data.status === "needs_human" && html`<${Handoff} message="Log in, then press Done."
-        onDone=${() => api(`/api/r/${token}/done`, { method: "POST" })} />`}
-    <//>`;
+  if (error?.status === 410) return html`<div class="gate"><div class="gate-center"><h1>Link expired</h1></div></div>`;
+  if (!data) return null;
+  if (data.status === "connected")
+    return html`<div class="gate"><div class="gate-center"><h1>✓ ${data.domain}</h1><${Status} state="connected" /></div></div>`;
+  return html`<div class="gate">
+    <div class="gate-brand"><span class="brand-mark"><${KeyIcon} /></span>Skeleton Key</div>
+    <div class="page" style="width:100%;margin-top:28px">
+      <${PageHeader} eyebrow="Reconnect" title=${data.domain} mono=${true}>
+        <${Help}><ol><li>Log in inside the browser.</li><li>Press Done.</li></ol><//>
+      <//>
+      <${Frame} url=${data.live_url}>
+        ${data.status === "needs_human" && html`<${Handoff} message="Log in, then press Done."
+          onDone=${() => api(`/api/r/${token}/done`, { method: "POST" })} />`}
+      <//>
+    </div>
+  </div>`;
 }
 
 /* ---------- app ---------- */
+
+function Shell({ page, arg, children, overview }) {
+  const [jobDomain, setJobDomain] = useState(null);
+  useEffect(() => { setJobDomain(null); if (page === "job") api(`/api/jobs/${arg}`).then((j) => setJobDomain(j.domain)).catch(() => {}); }, [page, arg]);
+  const site = page === "site" ? overview?.sites?.find((s) => s.domain === arg)?.title || arg : page === "job" ? jobDomain : null;
+  const signOut = async () => { await api("/api/logout", { method: "POST" }).catch(() => {}); location.hash = "#/login"; };
+  return html`<div class="app-shell">
+    <aside class="sidebar">
+      <a class="brand" href="#/"><span class="brand-mark"><${KeyIcon} /></span>Skeleton Key</a>
+      <div class="sidebar-context"><small>Site</small><strong>${site || "None selected"}</strong></div>
+      <nav class="side-nav">
+        <a class="nav-item" href="#/" aria-current=${!page || page === "site" || page === "job" ? "page" : undefined}>
+          <${HomeIcon} />Sites${overview?.sites?.length ? html`<span class="nav-count">${overview.sites.length}</span>` : ""}</a>
+        <a class="nav-item" href="#/race" aria-current=${page === "race" ? "page" : undefined}><${RaceIcon} />Race</a>
+      </nav>
+      <div class="sidebar-bottom"><button class="signout" onClick=${signOut}>Sign out</button></div>
+    </aside>
+    <main class="app-main"><div class="page">${children}</div></main>
+  </div>`;
+}
 
 function App() {
   const { parts, query } = useRoute();
   const [page, arg] = parts;
   const bare = page === "login" || page === "r";
+  const [overview] = usePoll(() => (bare ? Promise.resolve(null) : api("/api/overview")), bare ? 0 : 5000, [bare]);
+  if (page === "login") return html`<${Login} query=${query} />`;
+  if (page === "r") return html`<${Reconnect} token=${arg} />`;
   let view;
-  if (page === "login") view = html`<${Login} query=${query} />`;
-  else if (page === "r") view = html`<${Reconnect} token=${arg} />`;
-  else if (page === "site") view = html`<${Site} domain=${arg} />`;
+  if (page === "site") view = html`<${Site} domain=${arg} />`;
   else if (page === "job") view = html`<${Generate} id=${arg} />`;
-  else if (page === "race") view = html`<${Race} raceId=${arg} />`;
-  else view = html`<${Home} />`;
-  return html`
-    ${!bare && html`<header class="bar"><a class="brand" href="#/">🗝 Skeleton Key</a>
-      <nav><a href="#/" aria-current=${!page ? "page" : undefined}>Sites</a>
-        <a href="#/race" aria-current=${page === "race" ? "page" : undefined}>Race</a></nav></header>`}
-    <main>${view}</main>`;
+  else if (page === "race") view = html`<${Race} raceId=${arg} overview=${overview} />`;
+  else view = html`<${Home} overview=${overview} />`;
+  return html`<${Shell} page=${page} arg=${arg} overview=${overview}>${view}<//>`;
 }
 
 render(html`<${App} />`, document.getElementById("app"));
