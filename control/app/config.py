@@ -33,3 +33,6 @@ ANTHROPIC_PRICES = {
     "claude-haiku-4-5": (1 / 1e6, 5 / 1e6),
 }
 HEALTH_CHECK_SECONDS = int(os.environ.get("SK_HEALTH_CHECK_SECONDS", "900"))
+
+# The live browser view is served straight from this server (Vercel cannot proxy WebSockets).
+LIVE_BASE = os.environ.get("SK_LIVE_BASE") or f"https://{os.environ.get('SK_DOMAIN', 'localhost')}"

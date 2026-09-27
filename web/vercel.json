@@ -1,0 +1,14 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "cleanUrls": true,
+  "rewrites": [
+    { "source": "/api/:path*", "destination": "https://45-76-254-85.sslip.io/api/:path*" },
+    { "source": "/v1/:path*", "destination": "https://45-76-254-85.sslip.io/v1/:path*" },
+    { "source": "/mcp/:path*", "destination": "https://45-76-254-85.sslip.io/mcp/:path*" },
+    { "source": "/specs/:path*", "destination": "https://45-76-254-85.sslip.io/specs/:path*" },
+    { "source": "/specs", "destination": "https://45-76-254-85.sslip.io/specs" }
+  ],
+  "headers": [
+    { "source": "/static/(.*)", "headers": [{ "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }] }
+  ]
+}

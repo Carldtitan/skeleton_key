@@ -4,23 +4,20 @@ import hmac
 import io
 import json
 import os
-import pathlib
 import secrets
 import time
 import zipfile
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
-from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import db, gateway, jobs, liveview, mcp_server, race
-from .config import ANTHROPIC_API_KEY, BROWSE_MODEL, FRONTIER_MODEL, HEALTH_CHECK_SECONDS, PUBLIC_URL
+from .config import LIVE_BASE, ANTHROPIC_API_KEY, BROWSE_MODEL, FRONTIER_MODEL, HEALTH_CHECK_SECONDS, PUBLIC_URL
 from .endpoints import site_domain
 
-STATIC = pathlib.Path(__file__).with_name("static")
 ADMIN_PASSWORD = os.environ["SK_ADMIN_PASSWORD"]
 SESSION_COOKIE = "sk_session"
 SESSION_VALUE = hmac.new(ADMIN_PASSWORD.encode(), b"skeleton-key-session", hashlib.sha256).hexdigest()
@@ -43,7 +40,6 @@ app = FastAPI(title="Skeleton Key", lifespan=lifespan, docs_url=None, redoc_url=
 basic = HTTPBasic(auto_error=False)
 app.include_router(liveview.router)
 app.include_router(mcp_server.router)
-app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
 
 def admin(request: Request, creds: HTTPBasicCredentials | None = Depends(basic)):
@@ -60,15 +56,11 @@ def live_url(job):
     if not job or not job.get("view_token") or not job.get("vnc"):
         return None
     # noVNC resolves `path` relative to the page, so plain "websockify" lands on the proxied socket.
-    return (f"/live/{job['id']}/{job['view_token']}/vnc.html?autoconnect=true&resize=scale&reconnect=true"
+    return (f"{LIVE_BASE}/live/{job['id']}/{job['view_token']}/vnc.html?autoconnect=true&resize=scale&reconnect=true"
             f"&show_dot=true&path=websockify")
 
 
-# --- UI shell and login ---------------------------------------------------------------------------
-
-@app.get("/")
-def index():
-    return FileResponse(STATIC / "index.html", headers={"Cache-Control": "no-cache"})
+# --- Login (the UI itself is served by Vercel, which forwards /api here) ---------------------------
 
 
 class Login(BaseModel):
